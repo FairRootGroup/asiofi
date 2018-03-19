@@ -32,15 +32,12 @@ endif()
 # set_asiofi_cmake_policies()
 #
 # Sets CMake policies.
-macro(set_fairroot_cmake_policies)
+macro(set_asiofi_cmake_policies)
   # Find more details to each policy with cmake --help-policy CMPXXXX
   foreach(policy
-    CMP0025 # Compiler id for Apple Clang is now ``AppleClang``.
     CMP0028 # Double colon in target name means ALIAS or IMPORTED target.
-    CMP0042 # MACOSX_RPATH is enabled by default.
     CMP0048 # The ``project()`` command manages VERSION variables.
     CMP0054 # Only interpret ``if()`` arguments as variables or keywords when unquoted.
-    CMP0068 # ``RPATH`` settings on macOS do not affect ``install_name``.
   )
     if(POLICY ${policy})
       cmake_policy(SET ${policy} NEW)
@@ -60,14 +57,14 @@ function(get_git_version)
   endif()
 
   if(GIT_FOUND AND EXISTS ${CMAKE_SOURCE_DIR}/.git)
-    execute_process(COMMAND ${GIT_EXECUTABLE} describe --tags --dirty --match "v-*"
+    execute_process(COMMAND ${GIT_EXECUTABLE} describe --tags --dirty --match "v*"
       OUTPUT_VARIABLE ${ARGS_OUTVAR_PREFIX}_GIT_VERSION
       OUTPUT_STRIP_TRAILING_WHITESPACE
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
     if(${ARGS_OUTVAR_PREFIX}_GIT_VERSION)
       # cut first two characters "v-"
-      string(SUBSTRING ${${ARGS_OUTVAR_PREFIX}_GIT_VERSION} 2 -1 ${ARGS_OUTVAR_PREFIX}_GIT_VERSION)
+      string(SUBSTRING ${${ARGS_OUTVAR_PREFIX}_GIT_VERSION} 1 -1 ${ARGS_OUTVAR_PREFIX}_GIT_VERSION)
     endif()
     execute_process(COMMAND ${GIT_EXECUTABLE} log -1 --format=%cd
       OUTPUT_VARIABLE ${ARGS_OUTVAR_PREFIX}_GIT_DATE
@@ -91,6 +88,8 @@ function(get_git_version)
       set(${ARGS_OUTVAR_PREFIX}_GIT_DATE "Thu Jan 1 00:00:00 1970 +0000")
     endif()
   endif()
+
+  string(REGEX MATCH "^([^-]*)" blubb ${${ARGS_OUTVAR_PREFIX}_GIT_VERSION})
 
   # return values
   set(${ARGS_OUTVAR_PREFIX}_VERSION ${CMAKE_MATCH_0} PARENT_SCOPE)
