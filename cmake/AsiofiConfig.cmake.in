@@ -1,0 +1,39 @@
+################################################################################
+#    Copyright (C) 2018 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    #
+#                                                                              #
+#              This software is distributed under the terms of the             #
+#              GNU Lesser General Public Licence (LGPL) version 3,             #
+#                  copied verbatim in the file "LICENSE"                       #
+################################################################################
+
+cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
+
+@PACKAGE_INIT@
+
+### General variables for project discovery/inspection
+set(ASIOFI_VERSION @PROJECT_VERSION@)
+set(ASIOFI_GIT_VERSION @ASIOFI_GIT_VERSION@)
+
+set_and_check(Asiofi_ROOT @PACKAGE_CMAKE_INSTALL_PREFIX@)
+set_and_check(Asiofi_BINDIR @PACKAGE_CMAKE_INSTALL_PREFIX@/@Asiofi_INSTALL_BINDIR@)
+set_and_check(Asiofi_INCDIR @PACKAGE_CMAKE_INSTALL_PREFIX@/@Asiofi_INSTALL_INCDIR@)
+set_and_check(Asiofi_LIBDIR @PACKAGE_CMAKE_INSTALL_PREFIX@/@Asiofi_INSTALL_LIBDIR@)
+
+include(CMakeFindDependencyMacro)
+if(@Boost_FOUND@ OR ASIOFI_Boost_REQUIRED)
+  set(Asiofi_Boost_COMPONENTS system)
+  if(Asiofi_ADDITIONAL_Boost_COMPONENTS)
+    list(APPEND Asiofi_Boost_COMPONENTS ${Asiofi_ADDITIONAL_Boost_COMPONENTS})
+    list(REMOVE_DUPLICATES Asiofi_Boost_COMPONENTS)
+  endif()
+  if(Boost_INCLUDE_DIR) # checks for cached boost variable which indicates if Boost is already found
+    set(SILENCE_BOOST QUIET)
+  endif()
+  find_dependency(Boost 1.64 ${SILENCE_BOOST}
+    COMPONENTS ${Asiofi_Boost_COMPONENTS}
+  )
+endif()
+
+include(@PACKAGE_CMAKE_INSTALL_PREFIX@/@PACKAGE_INSTALL_DESTINATION@/AsiofiTargets.cmake)
+
+check_required_components(Asiofi)

@@ -1,0 +1,20 @@
+/********************************************************************************
+ *    Copyright (C) 2018 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    *
+ *                                                                              *
+ *              This software is distributed under the terms of the             *
+ *              GNU Lesser General Public Licence (LGPL) version 3,             *
+ *                  copied verbatim in the file "LICENSE"                       *
+ ********************************************************************************/
+
+#ifndef ASIOFI_VERSION
+
+#define ASIOFI_VERSION "@PROJECT_VERSION@"
+#define ASIOFI_VERSION_DEC (@PROJECT_VERSION_MAJOR@ * 10000) + (@PROJECT_VERSION_MINOR@ * 100) + @PROJECT_VERSION_PATCH@
+#define ASIOFI_VERSION_HEX (@PROJECT_VERSION_MAJOR@ << 16) + (@PROJECT_VERSION_MINOR@ << 8) + @PROJECT_VERSION_PATCH@
+#define ASIOFI_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define ASIOFI_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define ASIOFI_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define ASIOFI_GIT_VERSION "@Asiofi_GIT_VERSION@"
+#define ASIOFI_GIT_DATE "@Asiofi_GIT_DATE@"
+
+#endif // ASIOFI_VERSION
