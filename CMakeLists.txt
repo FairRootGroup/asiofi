@@ -28,6 +28,7 @@ if(Boost_INCLUDE_DIR)
   set(SILENCE_BOOST QUIET)
 endif()
 find_package(Boost 1.64 ${SILENCE_BOOST} COMPONENTS system)
+find_package(OFI 1.6.0 COMPONENTS fi_sockets)
 
 # generate compile_commands.json file (https://clang.llvm.org/docs/JSONCompilationDatabase.html)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -40,6 +41,7 @@ set(Asiofi_INSTALL_BINDIR ${CMAKE_INSTALL_BINDIR})
 set(Asiofi_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME_LOWER})
 set(Asiofi_INSTALL_INCDIR ${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME_LOWER})
 set(Asiofi_INSTALL_DATADIR ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME_LOWER})
+set(Asiofi_INSTALL_CMAKEMODDIR ${Asiofi_INSTALL_DATADIR}/cmake)
 
 # Configure Version.hpp
 configure_file(include/${PROJECT_NAME_LOWER}/version.hpp.in
@@ -49,7 +51,12 @@ configure_file(include/${PROJECT_NAME_LOWER}/version.hpp.in
 
 # Define the library
 add_library(asiofi INTERFACE)
-target_link_libraries(asiofi INTERFACE Boost::boost Boost::system)
+target_link_libraries(asiofi
+  INTERFACE
+  Boost::boost
+  Boost::system
+  OFI::libfabric
+)
 target_include_directories(asiofi INTERFACE
   $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
@@ -70,6 +77,11 @@ install(
 
 # Add fabtests
 add_subdirectory(fabtests)
+
+# Install cmake modules
+install( FILES cmake/FindOFI.cmake
+  DESTINATION ${Asiofi_INSTALL_CMAKEMODDIR}
+)
 
 # Configure/Install CMake package and exported targets
 include(CMakePackageConfigHelpers)
