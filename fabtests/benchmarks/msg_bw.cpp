@@ -6,12 +6,16 @@
  *                  copied verbatim in the file "LICENSE"                       *
  ********************************************************************************/
 
+#include <asiofi/fabric.hpp>
 #include <asiofi/version.hpp>
+#include <rdma/fabric.h>
 #include <iostream>
 
 int main(int argc, const char* argv[])
 {
   std::cout << "asiofi version " << ASIOFI_GIT_VERSION << " from " << ASIOFI_GIT_DATE << std::endl;
+
+  asiofi::info info(FI_VERSION(1, 5), nullptr, nullptr, 0, asiofi::info());
 
   return 0;
 }

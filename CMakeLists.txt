@@ -19,8 +19,20 @@ project(Asiofi VERSION ${Asiofi_VERSION} LANGUAGES C CXX)
 message("${BWhite}${PROJECT_NAME}${CR} ${Asiofi_GIT_VERSION} from ${Asiofi_DATE}")
 string(TOLOWER ${PROJECT_NAME} PROJECT_NAME_LOWER)
 
+# Set a default build type
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
+endif()
+
+# Handle C++ standard level
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 11)
+elseif(${CMAKE_CXX_STANDARD} LESS 11)
+  message(FATAL_ERROR "A minimum CMAKE_CXX_STANDARD of 11 is required.")
+endif()
+if(NOT CMAKE_CXX_EXTENSIONS)
+  set(CMAKE_CXX_EXTENSIONS OFF)
 endif()
 
 # Checks for cached boost variable which indicates if Boost is already found
