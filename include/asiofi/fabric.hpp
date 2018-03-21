@@ -18,45 +18,66 @@ namespace asiofi
 {
 
 /**
- * @struct info fabric.hpp <asiofi/fabric.hpp>
+ * @struct hints fabric.hpp <asiofi/fabric.hpp>
  * @brief wraps the fi_info struct
  */
-  struct info
+  struct hints
   {
-    /// default ctor
-    info() : m_info(fi_allocinfo()) { }
+    friend class info;
 
-    /// ctor
-    explicit info(int version, const char* node, const char* service,
-      uint64_t flags, const info& hints)
-    {
-      auto rc = fi_getinfo(version, node, service, flags, hints.get(), &m_info);
-      if (rc != 0)
-        throw runtime_error("Failed querying fi_getinfo, reason: ", fi_strerror(rc));
-    }
+    /// default query ctor
+    hints() : m_info(fi_allocinfo()) { }
 
     /// copy ctor
-    explicit info(const info& rh) : m_info(fi_dupinfo(rh.get())) { }
+    explicit hints(const hints& rh) : m_info(fi_dupinfo(rh.get())) { }
 
     /// move ctor
-    explicit info(info&& rh)
+    explicit hints(hints&& rh)
     {
       m_info = rh.m_info;
       rh.m_info = nullptr;
     }
 
     /// dtor
-    ~info() { fi_freeinfo(m_info); }
+    ~hints() { fi_freeinfo(m_info); }
 
-    friend auto operator<<(std::ostream& os, const info& info) -> std::ostream&
+    friend auto operator<<(std::ostream& os, const hints& hints) -> std::ostream&
     {
-      return os << fi_tostr(m_info, FI_TYPE_INFO);
+      return os << fi_tostr(hints.m_info, FI_TYPE_INFO);
     }
 
-    private:
+    protected:
     fi_info* m_info;
 
     auto get() const -> const fi_info* { return m_info; }
+  }; /* struct hint */
+
+/**
+ * @struct info fabric.hpp <asiofi/fabric.hpp>
+ * @brief adds query ctors to asiofi::hint
+ */
+  struct info : hints
+  {
+    /// query ctor
+    explicit info(const char* node, const char* service,
+      uint64_t flags, const hints& hints)
+    {
+      auto rc = fi_getinfo(FI_VERSION(1, 6), node, service, flags, hints.get(), &m_info);
+      if (rc != 0)
+        throw runtime_error("Failed querying fi_getinfo, reason: ", fi_strerror(rc));
+    }
+
+    /// query ctor #2
+    explicit info(uint64_t flags, const hints& hints) : info(nullptr, nullptr, flags, hints) { }
+
+    /// (default) query ctor #3
+    info() : info(0, hints()) { }
+
+    /// copy ctor
+    explicit info(const info& rh) : hints(rh) { }
+
+    /// move ctor
+    explicit info(info&& rh) : hints(rh) { }
   }; /* struct info */
 
 } /* namespace asiofi */

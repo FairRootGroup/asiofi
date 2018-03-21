@@ -15,7 +15,8 @@ int main(int argc, const char* argv[])
 {
   std::cout << "asiofi version " << ASIOFI_GIT_VERSION << " from " << ASIOFI_GIT_DATE << std::endl;
 
-  asiofi::info info(FI_VERSION(1, 5), nullptr, nullptr, 0, asiofi::info());
+  asiofi::info info;
+  std::cout << info << std::endl;
 
   return 0;
 }
