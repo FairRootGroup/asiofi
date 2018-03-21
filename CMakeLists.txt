@@ -8,53 +8,40 @@
 
 cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 
+
+# Project ######################################################################
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
-include(AsiofiInit)
+include(AsiofiLib)
 
 set_asiofi_cmake_policies()
-
 get_git_version(OUTVAR_PREFIX Asiofi)
 
 project(Asiofi VERSION ${Asiofi_VERSION} LANGUAGES C CXX)
 message("${BWhite}${PROJECT_NAME}${CR} ${Asiofi_GIT_VERSION} from ${Asiofi_DATE}")
-string(TOLOWER ${PROJECT_NAME} PROJECT_NAME_LOWER)
 
-# Set a default build type
-if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE RelWithDebInfo)
-endif()
+set_asiofi_defaults()
+################################################################################
 
-# Handle C++ standard level
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 11)
-elseif(${CMAKE_CXX_STANDARD} LESS 11)
-  message(FATAL_ERROR "A minimum CMAKE_CXX_STANDARD of 11 is required.")
-endif()
-if(NOT CMAKE_CXX_EXTENSIONS)
-  set(CMAKE_CXX_EXTENSIONS OFF)
-endif()
 
-# Checks for cached boost variable which indicates if Boost is already found
-if(Boost_INCLUDE_DIR)
+# Build options ################################################################
+option(BUILD_FABTESTS "Build fabtests." OFF)
+################################################################################
+
+
+# Dependencies #################################################################
+if(Boost_INCLUDE_DIR) # Silence output, if Boost was found already
   set(SILENCE_BOOST QUIET)
 endif()
-find_package(Boost 1.64 ${SILENCE_BOOST} COMPONENTS system)
-find_package(OFI 1.6.0 COMPONENTS fi_sockets)
+find_package(Boost 1.64 ${SILENCE_BOOST} REQUIRED COMPONENTS system)
+find_package(OFI 1.6.0 REQUIRED COMPONENTS fi_sockets)
 
-# generate compile_commands.json file (https://clang.llvm.org/docs/JSONCompilationDatabase.html)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+if(BUILD_FABTESTS)
+  # find_package(FlatBuffers ...)
+endif()
+################################################################################
 
-# Define CMAKE_INSTALL_*DIR family of variables
-include(GNUInstallDirs)
 
-# Define install dirs
-set(Asiofi_INSTALL_BINDIR ${CMAKE_INSTALL_BINDIR})
-set(Asiofi_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME_LOWER})
-set(Asiofi_INSTALL_INCDIR ${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME_LOWER})
-set(Asiofi_INSTALL_DATADIR ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME_LOWER})
-set(Asiofi_INSTALL_CMAKEMODDIR ${Asiofi_INSTALL_DATADIR}/cmake)
-
+# Targets ######################################################################
 # Configure Version.hpp
 configure_file(include/${PROJECT_NAME_LOWER}/version.hpp.in
   ${CMAKE_BINARY_DIR}/include/${PROJECT_NAME_LOWER}/version.hpp
@@ -64,22 +51,27 @@ configure_file(include/${PROJECT_NAME_LOWER}/version.hpp.in
 # Define the library
 add_library(asiofi INTERFACE)
 target_link_libraries(asiofi
-  INTERFACE
-  Boost::boost
-  Boost::system
-  OFI::libfabric
+  INTERFACE Boost::boost Boost::system OFI::libfabric
 )
 target_include_directories(asiofi INTERFACE
   $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
+
+# Add fabtests
+if(BUILD_FABTESTS)
+  add_subdirectory(fabtests)
+endif()
+################################################################################
+
+
+# Installation #################################################################
 install(TARGETS asiofi
-  EXPORT ${PROJECT_NAME}Targets
+  EXPORT ${Asiofi_EXPORT_SET}
   DESTINATION ${Asiofi_INSTALL_LIBDIR}
 )
-install(
-  DIRECTORY
+install(DIRECTORY
   include/${PROJECT_NAME_LOWER}
   ${CMAKE_BINARY_DIR}/include/${PROJECT_NAME_LOWER}
 
@@ -87,36 +79,5 @@ install(
   PATTERN *.in EXCLUDE
 )
 
-# Add fabtests
-add_subdirectory(fabtests)
-
-# Install cmake modules
-install( FILES cmake/FindOFI.cmake
-  DESTINATION ${Asiofi_INSTALL_CMAKEMODDIR}
-)
-
-# Configure/Install CMake package and exported targets
-include(CMakePackageConfigHelpers)
-set(PACKAGE_INSTALL_DESTINATION
-  ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}-${PROJECT_VERSION}
-)
-install(EXPORT ${PROJECT_NAME}Targets
-  NAMESPACE ${PROJECT_NAME}::
-  DESTINATION ${PACKAGE_INSTALL_DESTINATION}
-  EXPORT_LINK_INTERFACE_LIBRARIES
-)
-write_basic_package_version_file(
-  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake
-  COMPATIBILITY AnyNewerVersion
-)
-configure_package_config_file(
-  ${CMAKE_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in
-  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
-  INSTALL_DESTINATION ${PACKAGE_INSTALL_DESTINATION}
-  PATH_VARS CMAKE_INSTALL_PREFIX
-)
-install(FILES
-  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
-  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake
-  DESTINATION ${PACKAGE_INSTALL_DESTINATION}
-)
+install_asiofi_cmake_package()
+################################################################################
