@@ -11,19 +11,22 @@
 
 #include <asiofi/errno.hpp>
 #include <cstdint>
+#include <ostream>
 #include <rdma/fabric.h>
 
 namespace asiofi
 {
 
 /**
- * @struct info fabric.hpp <include/asiofi/fabric.hpp>
+ * @struct info fabric.hpp <asiofi/fabric.hpp>
  * @brief wraps the fi_info struct
  */
   struct info
   {
+    /// default ctor
     info() : m_info(fi_allocinfo()) { }
 
+    /// ctor
     explicit info(int version, const char* node, const char* service,
       uint64_t flags, const info& hints)
     {
@@ -32,15 +35,23 @@ namespace asiofi
         throw runtime_error("Failed querying fi_getinfo, reason: ", fi_strerror(rc));
     }
 
+    /// copy ctor
     explicit info(const info& rh) : m_info(fi_dupinfo(rh.get())) { }
 
+    /// move ctor
     explicit info(info&& rh)
     {
       m_info = rh.m_info;
       rh.m_info = nullptr;
     }
 
+    /// dtor
     ~info() { fi_freeinfo(m_info); }
+
+    friend auto operator<<(std::ostream& os, const info& info) -> std::ostream&
+    {
+      return os << fi_tostr(m_info, FI_TYPE_INFO);
+    }
 
     private:
     fi_info* m_info;
