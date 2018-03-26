@@ -8,22 +8,20 @@ UNDER CONSTRUCTION
 
 Bindings (Core):
 
-- OFI libfabric
-- Boost.Asio
+- OFI libfabric (Hint location via `-DOFI_ROOT=/path/to/libfabric`)
+- Boost.Asio (Hint location via `-DOFI_BOOST=/path/to/boost`)
 
 Fabtests (Optional, enable with `-DBUILD_FABTESTS=ON`):
 
-- Google benchmark
+- Google benchmark (Hint location via `-DOFI_BENCHMARK=/path/to/benchmark`)
 
 ## Quickstart
 
 ```bash
-cmake -DBOOST_ROOT=/path/to/boost \
-      -DOFI_ROOT=/path/to/libfabric \
-      -DBENCHMARK_ROOT=/path/to/google_benchmark \
-      -DCMAKE_INSTALL_PREFIX=./install \
-      -DBUILD_FABTESTS=ON /path/to/asiofi_source
-cmake --build .
+git clone https://github.com/dennisklein/asiofi
+mkdir asiofi_build && cd asiofi_build
+cmake -DCMAKE_INSTALL_PREFIX=./asiofi_install ../asiofi
+cmake --build . --target install
 ```
 
 ## License
