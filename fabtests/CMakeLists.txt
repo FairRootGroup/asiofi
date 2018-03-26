@@ -9,9 +9,13 @@
 add_executable(afi_msg_bw benchmarks/msg_bw.cpp)
 target_link_libraries(afi_msg_bw PUBLIC asiofi)
 
+add_executable(malloc_bw benchmarks/malloc_bw.cpp)
+target_link_libraries(malloc_bw PUBLIC benchmark::benchmark)
+
 install(
   TARGETS
   afi_msg_bw
+  malloc_bw
 
   EXPORT ${PROJECT_NAME}Targets
   DESTINATION ${Asiofi_INSTALL_BINDIR}

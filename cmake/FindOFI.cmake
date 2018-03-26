@@ -8,11 +8,6 @@
 
 # According to the docs the modification of the PKG_CONFIG_PATH environment should
 # not be necessary, but it does not work otherwise.
-if(OFI_Dir)
-  list(APPEND CMAKE_PREFIX_PATH "${OFI_Dir}/lib/pkgconfig")
-  set(ENV{PKG_CONFIG_PATH} "${OFI_Dir}/lib/pkgconfig:" $ENV{PKG_CONFIG_PATH})
-endif()
-
 if(OFI_ROOT)
   list(APPEND CMAKE_PREFIX_PATH "${OFI_ROOT}/lib/pkgconfig")
   set(ENV{PKG_CONFIG_PATH} "${OFI_ROOT}/lib/pkgconfig:" $ENV{PKG_CONFIG_PATH})
@@ -42,7 +37,7 @@ if(PKG_CONFIG_FOUND)
   # so let's build it ourselves
   find_library(OFI_LIBFABRIC
     NAMES libfabric.so libfabric.dylib
-    HINTS ${OFI_Dir} ${OFI_ROOT} $ENV{OFI_ROOT}
+    HINTS ${OFI_ROOT} $ENV{OFI_ROOT}
     PATH_SUFFIXES lib
   )
 
@@ -52,7 +47,7 @@ if(PKG_CONFIG_FOUND)
   # Find fi_info command to be able to check required features of the OFI installation
   find_program(OFI_INFO_EXECUTABLE
     NAMES fi_info
-    HINTS ${OFI_Dir} ${OFI_ROOT} $ENV{OFI_ROOT}
+    HINTS ${OFI_ROOT} $ENV{OFI_ROOT}
     PATH_SUFFIXES bin
   )
 

@@ -36,6 +36,10 @@ find_package(Boost 1.64 ${SILENCE_BOOST} REQUIRED COMPONENTS system)
 find_package(OFI 1.6.0 REQUIRED COMPONENTS fi_sockets)
 
 if(BUILD_FABTESTS)
+  if(BENCHMARK_ROOT)
+    set(CMAKE_PREFIX_PATH ${BENCHMARK_ROOT} ${CMAKE_PREFIX_PATH})
+  endif()
+  find_package(benchmark REQUIRED)
   # find_package(FlatBuffers ...)
 endif()
 ################################################################################

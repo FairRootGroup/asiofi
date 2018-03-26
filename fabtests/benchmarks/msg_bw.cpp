@@ -8,14 +8,15 @@
 
 #include <asiofi/fabric.hpp>
 #include <asiofi/version.hpp>
-#include <rdma/fabric.h>
 #include <iostream>
+#include <rdma/fabric.h>
 
-int main(int argc, const char* argv[])
+int main(int argc, char** argv)
 {
   std::cout << "asiofi version " << ASIOFI_GIT_VERSION << " from " << ASIOFI_GIT_DATE << std::endl;
 
-  asiofi::info info;
+  asiofi::hints hints;
+  asiofi::info info(0, hints);
   std::cout << info << std::endl;
 
   return 0;
