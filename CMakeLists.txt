@@ -89,7 +89,7 @@ install_asiofi_cmake_package()
 
 # Summary ######################################################################
 message("  ")
-message("  COMPONENT  BUILT?  INFO")
+message("  ${Cyan}COMPONENT  BUILT?  INFO${CR}")
 message("  ${BWhite}bindings${CR}    ${BGreen}YES${CR}    (default, always built)")
 if(BUILD_FABTESTS)
   set(fabtests_summary "${BGreen}YES${CR}    (disable with ${BMagenta}-DBUILD_FABTESTS=OFF${CR})")
