@@ -9,12 +9,12 @@ UNDER CONSTRUCTION
 Bindings (Core):
 
 - [OFI libfabric](https://github.com/ofiwg/libfabric) (Hint location via `-DOFI_ROOT=/path/to/libfabric`)
-- [Boost.Asio](http://www.boost.org/) (Hint location via `-DOFI_BOOST=/path/to/boost`)
+- [Boost.Asio](http://www.boost.org/) (Hint location via `-DBOOST_ROOT=/path/to/boost`)
 
 Fabtests (Optional, enable with `-DBUILD_FABTESTS=ON`):
 
-- [Google benchmark](https://github.com/google/benchmark) (Hint location via `-DOFI_BENCHMARK=/path/to/benchmark`)
-- [Boost.Interprocess](http://www.boost.org/) (Hint location via `-DOFI_BOOST=/path/to/boost`)
+- [Google benchmark](https://github.com/google/benchmark) (Hint location via `-DBENCHMARK_ROOT=/path/to/benchmark`)
+- [Boost.Interprocess](http://www.boost.org/) (shares installation location with Boost.Asio)
 
 ## Quickstart
 
