@@ -7,11 +7,21 @@
  ********************************************************************************/
 
 #include <benchmark/benchmark.h>
-#include <cstdlib>
+#include <boost/interprocess/managed_shared_memory.hpp>
 #include <unistd.h>
 
 int main(int argc, char** argv)
 {
+  using namespace boost::interprocess;
+
+  //Remove shared memory on construction and destruction
+  struct shm_remove {
+    shm_remove() { shared_memory_object::remove("shmalloc_bw"); }
+    ~shm_remove() { shared_memory_object::remove("shmalloc_bw"); }
+  } remover;
+
+  managed_shared_memory segment(create_only, "shmalloc_bw", 1<<30);
+
   const size_t page = sysconf(_SC_PAGESIZE);
 
   auto bm = [&](benchmark::State& state){
@@ -20,7 +30,7 @@ int main(int argc, char** argv)
     const size_t step2 = step / sizeof(int);
 
     for (auto _ : state) {
-      auto x = static_cast<int*>(std::malloc(msg));
+      auto x = static_cast<int*>(segment.allocate(msg));
       benchmark::DoNotOptimize(x);
       auto x2 = x;
       for (size_t i = 0; i < msg; i += step) {
@@ -28,13 +38,13 @@ int main(int argc, char** argv)
         benchmark::DoNotOptimize(x2);
         x2 += step2;
       }
-      std::free(x);
+      segment.deallocate(x);
     }
     state.SetBytesProcessed(state.iterations() * msg);
   };
   
-  benchmark::RegisterBenchmark("malloc, page write, free", bm)->
-    RangeMultiplier(2)->Range(1<<12, 1<<30)->Threads(1);
+  benchmark::RegisterBenchmark("shmalloc, page write, shmdealloc", bm)->
+    RangeMultiplier(2)->Range(1<<12, 1<<29)->Threads(1);
 
   benchmark::Initialize(&argc, argv);
   benchmark::RunSpecifiedBenchmarks();
