@@ -14,6 +14,7 @@ Bindings (Core):
 Fabtests (Optional, enable with `-DBUILD_FABTESTS=ON`):
 
 - [Google benchmark](https://github.com/google/benchmark) (Hint location via `-DOFI_BENCHMARK=/path/to/benchmark`)
+- [Boost.Interprocess](http://www.boost.org/) (Hint location via `-DOFI_BOOST=/path/to/boost`)
 
 ## Quickstart
 
