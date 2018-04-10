@@ -7,34 +7,64 @@
  ********************************************************************************/
 
 #include <benchmark/benchmark.h>
+#include <boost/interprocess/managed_shared_memory.hpp>
 #include <cstdlib>
-#include <unistd.h>
+#include <new>
 
 int main(int argc, char** argv)
 {
-  const size_t page = sysconf(_SC_PAGESIZE);
+  using namespace boost::interprocess;
+
+  //Remove shared memory on construction and destruction
+  struct shm_remove {
+    shm_remove() { shared_memory_object::remove("shmalloc_bw"); }
+    ~shm_remove() { shared_memory_object::remove("shmalloc_bw"); }
+  } remover;
+
+  managed_shared_memory segment(create_only, "shmalloc_bw", 1<<30);
 
   auto bm = [&](benchmark::State& state){
-    const size_t msg = state.range(0);
-    const size_t step = msg / page;
-    const size_t step2 = step / sizeof(int);
+    const size_t size = state.range(0);
 
     for (auto _ : state) {
-      auto x = static_cast<int*>(std::malloc(msg));
+      const auto x = static_cast<size_t*>(std::malloc(size));
       benchmark::DoNotOptimize(x);
-      auto x2 = x;
-      for (size_t i = 0; i < msg; i += step) {
-        *x2 = 42;
-        benchmark::DoNotOptimize(x2);
-        x2 += step2;
-      }
       std::free(x);
     }
-    state.SetBytesProcessed(state.iterations() * msg);
+
+    state.SetBytesProcessed(state.iterations() * size);
+  };
+
+  auto bm2 = [&](benchmark::State& state){
+    const size_t size = state.range(0);
+
+    for (auto _ : state) {
+      const auto x = static_cast<size_t*>(new size_t[size / sizeof(size_t)]);
+      benchmark::DoNotOptimize(x);
+      delete[] x;
+    }
+
+    state.SetBytesProcessed(state.iterations() * size);
+  };
+
+  auto bm3 = [&](benchmark::State& state){
+    const size_t size = state.range(0);
+
+    for (auto _ : state) {
+      const auto x = static_cast<size_t*>(segment.allocate(size));
+      benchmark::DoNotOptimize(x);
+      segment.deallocate(x);
+    }
+
+    state.SetBytesProcessed(state.iterations() * size);
   };
   
-  benchmark::RegisterBenchmark("malloc, page write, free", bm)->
-    RangeMultiplier(2)->Range(1<<12, 1<<30)->Threads(1);
+  benchmark::RegisterBenchmark("malloc, free", bm)->
+    RangeMultiplier(2)->Range(1<<12, 1<<29)->Threads(1);
+  benchmark::RegisterBenchmark("new, delete", bm2)->
+    RangeMultiplier(2)->Range(1<<12, 1<<29)->Threads(1);
+  benchmark::RegisterBenchmark("shmalloc, shmdealloc", bm3)->
+    RangeMultiplier(2)->Range(1<<12, 1<<29)->Threads(1);
 
   benchmark::Initialize(&argc, argv);
   benchmark::RunSpecifiedBenchmarks();
