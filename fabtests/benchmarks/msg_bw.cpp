@@ -163,6 +163,7 @@ auto client(const std::string& address, const std::string& port) -> int
   asiofi::fabric fabric(info);
   asiofi::domain domain(fabric);
   asiofi::endpoint ep(io_context, domain);
+  ep.enable();
   ep.connect();
 
   io_context.run();
