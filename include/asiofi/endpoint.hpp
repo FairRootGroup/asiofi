@@ -12,8 +12,10 @@
 #include <asiofi/domain.hpp>
 #include <asiofi/errno.hpp>
 #include <asiofi/fabric.hpp>
+#include <boost/asio/bind_executor.hpp>
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/io_context.hpp>
+#include <boost/asio/io_context_strand.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
 #include <iostream>
 #include <rdma/fi_cm.h>
@@ -38,12 +40,25 @@ struct endpoint
   , m_domain(domain)
   , m_endpoint(create_endpoint(domain, info, m_context))
   , m_eq(create_event_queue(domain.get_fabric(), m_context))
-  , m_eq_fd(io_context, get_native_wait_fd(m_eq))
+  , m_eq_fd(io_context, get_native_wait_fd(&m_eq->fid))
+  , m_rx_cq(create_completion_queue(direction::rx, domain.get_info(), domain, m_context))
+  , m_tx_cq(create_completion_queue(direction::tx, domain.get_info(), domain, m_context))
+  , m_rx_cq_fd(io_context, get_native_wait_fd(&m_rx_cq->fid))
+  , m_tx_cq_fd(io_context, get_native_wait_fd(&m_tx_cq->fid))
+  , m_rx_strand(io_context)
+  , m_tx_strand(io_context)
   {
-    // bind event queue to endpoint registering for connection events
     auto rc = fi_ep_bind(m_endpoint, &m_eq->fid, 0);
     if (rc != FI_SUCCESS)
       throw runtime_error("Failed binding ofi event queue to ofi endpoint, reason: ", fi_strerror(rc));
+
+    rc = fi_ep_bind(m_endpoint, &m_rx_cq->fid, FI_RECV);
+    if (rc != FI_SUCCESS)
+      throw runtime_error("Failed binding ofi RX completion queue to ofi endpoint, reason: ", fi_strerror(rc));
+
+    rc = fi_ep_bind(m_endpoint, &m_tx_cq->fid, FI_TRANSMIT);
+    if (rc != FI_SUCCESS)
+      throw runtime_error("Failed binding ofi TX completion queue to ofi endpoint, reason: ", fi_strerror(rc));
   }
 
   /// ctor #2
@@ -66,13 +81,24 @@ struct endpoint
   , m_endpoint(std::move(rhs.m_endpoint))
   , m_eq(rhs.m_eq)
   , m_eq_fd(std::move(rhs.m_eq_fd))
+  , m_rx_cq(std::move(rhs.m_rx_cq))
+  , m_tx_cq(std::move(rhs.m_tx_cq))
+  , m_rx_cq_fd(std::move(rhs.m_rx_cq_fd))
+  , m_tx_cq_fd(std::move(rhs.m_tx_cq_fd))
+  , m_rx_strand(std::move(rhs.m_rx_strand))
+  , m_tx_strand(std::move(rhs.m_tx_strand))
   {
     rhs.m_endpoint = nullptr;
+    rhs.m_eq = nullptr;
+    rhs.m_rx_cq = nullptr;
+    rhs.m_tx_cq = nullptr;
   }
 
   /// dtor
   ~endpoint()
   {
+    fi_close(&m_tx_cq->fid);
+    fi_close(&m_rx_cq->fid);
     fi_close(&m_eq->fid);
     fi_close(&m_endpoint->fid);
   }
@@ -175,6 +201,94 @@ struct endpoint
     }
   }
 
+  template<typename CompletionHandler>
+  auto send(boost::asio::mutable_buffer buffer, CompletionHandler&& handler) -> void
+  {
+    fi_addr_t dummy_addr;
+    auto rc = fi_send(m_endpoint, buffer.data(), buffer.size(), nullptr, dummy_addr, &m_context);
+    if (rc != FI_SUCCESS)
+      throw runtime_error("Failed posting a TX buffer on ofi endpoint, reason: ", fi_strerror(rc));
+
+    auto wait_set = &m_tx_cq->fid;
+    rc = fi_trywait(get_wrapped_obj(m_domain.get_fabric()), &wait_set, 1);
+    if (rc == FI_SUCCESS) {
+      m_tx_cq_fd.async_wait(
+        boost::asio::posix::stream_descriptor::wait_read,
+          boost::asio::bind_executor(m_tx_strand,
+          [&](const boost::system::error_code& error) {
+            if (!error) {
+              // struct fi_cq_data_entry {
+              // void     *op_context; [> operation context <]
+              // uint64_t flags;       [> completion flags <]
+              // size_t   len;         [> size of received data <]
+              // void     *buf;        [> receive data buffer <]
+              // uint64_t data;        [> completion data <]
+              // };
+              fi_cq_data_entry entry;
+              auto rc = fi_cq_sread(m_tx_cq, &entry, 1, nullptr, 100);
+              if (rc == -FI_EAVAIL) {
+                // not implemented yet, see ft_eq_readerr()
+                throw runtime_error("Error pending on TX completion queue, handling not yet implemented.");
+              } else if (rc < 0) {
+                throw runtime_error("Failed reading from TX completion queue, reason: ", fi_strerror(rc));
+              } else {
+                handler(boost::asio::mutable_buffer(entry.buf, entry.len));
+              }
+            } else {
+              // not implemented yet
+            }
+          }
+        )
+      );
+    } else {
+      throw runtime_error("Not yet implemented");
+    }
+  }
+
+  template<typename CompletionHandler>
+  auto recv(boost::asio::mutable_buffer buffer, CompletionHandler&& handler) -> void
+  {
+    fi_addr_t dummy_addr;
+    auto rc = fi_recv(m_endpoint, buffer.data(), buffer.size(), nullptr, dummy_addr, &m_context);
+    if (rc != FI_SUCCESS)
+      throw runtime_error("Failed posting a RX buffer on ofi endpoint, reason: ", fi_strerror(rc));
+
+    auto wait_set = &m_rx_cq->fid;
+    rc = fi_trywait(get_wrapped_obj(m_domain.get_fabric()), &wait_set, 1);
+    if (rc == FI_SUCCESS) {
+      m_rx_cq_fd.async_wait(
+        boost::asio::posix::stream_descriptor::wait_read,
+          boost::asio::bind_executor(m_rx_strand,
+          [&](const boost::system::error_code& error) {
+            if (!error) {
+              // struct fi_cq_data_entry {
+              // void     *op_context; [> operation context <]
+              // uint64_t flags;       [> completion flags <]
+              // size_t   len;         [> size of received data <]
+              // void     *buf;        [> receive data buffer <]
+              // uint64_t data;        [> completion data <]
+              // };
+              fi_cq_data_entry entry;
+              auto rc = fi_cq_sread(m_rx_cq, &entry, 1, nullptr, 100);
+              if (rc == -FI_EAVAIL) {
+                // not implemented yet, see ft_eq_readerr()
+                throw runtime_error("Error pending on RX completion queue, handling not yet implemented.");
+              } else if (rc < 0) {
+                throw runtime_error("Failed reading from RX completion queue, reason: ", fi_strerror(rc));
+              } else {
+                handler(boost::asio::mutable_buffer(entry.buf, entry.len));
+              }
+            } else {
+              // not implemented yet
+            }
+          }
+        )
+      );
+    } else {
+      throw runtime_error("Not yet implemented");
+    }
+  }
+
   private:
   fi_context m_context;
   boost::asio::io_context& m_io_context;
@@ -182,6 +296,12 @@ struct endpoint
   fid_ep* m_endpoint;
   fid_eq* m_eq;
   boost::asio::posix::stream_descriptor m_eq_fd;
+  fid_cq* m_rx_cq;
+  fid_cq* m_tx_cq;
+  boost::asio::posix::stream_descriptor m_rx_cq_fd;
+  boost::asio::posix::stream_descriptor m_tx_cq_fd;
+  boost::asio::io_context::strand m_rx_strand;
+  boost::asio::io_context::strand m_tx_strand;
 
   static auto create_endpoint(const domain& domain, const info& info, fi_context& context) -> fid_ep* 
   {
@@ -216,16 +336,46 @@ struct endpoint
     return eq;
   }
 
-  static auto get_native_wait_fd(fid_eq* eq) -> int
+  static auto get_native_wait_fd(fid* obj) -> int
   {
     int fd;
-    auto rc = fi_control(&eq->fid, FI_GETWAIT, static_cast<void*>(&fd));
+    auto rc = fi_control(obj, FI_GETWAIT, static_cast<void*>(&fd));
     if (rc != FI_SUCCESS)
       throw runtime_error("Failed retrieving native wait fd from ofi event queue, reason: ", fi_strerror(rc));
 
     return fd;
   }
 
+  enum class direction { rx, tx };
+
+  static auto create_completion_queue(direction dir, const info& info, const domain& domain, fi_context& context) -> fid_cq*
+  {
+    fid_cq* cq;
+    fi_cq_attr cq_attr = {
+      0,                 // size_t               size;      [> # entries for CQ <]
+      0,                 // uint64_t             flags;     [> operation flags <]
+      FI_CQ_FORMAT_DATA, // enum fi_cq_format    format;    [> completion format <]
+      FI_WAIT_FD,        // enum fi_wait_obj     wait_obj;  [> requested wait object <]
+      0,                 // int                  signaling_vector; [> interrupt affinity <]
+      FI_CQ_COND_NONE,   // enum fi_cq_wait_cond wait_cond; [> wait condition format <]
+      nullptr            // struct fid_wait*     wait_set;  [> optional wait set <]
+    };
+
+    if (dir == direction::rx) {
+      cq_attr.size = get_wrapped_obj(info)->rx_attr->size;
+    } else if (dir == direction::tx) {
+      cq_attr.size = get_wrapped_obj(info)->tx_attr->size;
+    }
+
+    auto rc = fi_cq_open(get_wrapped_obj(domain),
+                         &cq_attr,
+                         &cq,
+                         &context);
+    if (rc != FI_SUCCESS)
+      throw runtime_error("Failed opening ofi completion queue, reason: ", fi_strerror(rc));
+
+    return cq;
+  }
 }; /* struct endpoint */
 
 using ep = endpoint;

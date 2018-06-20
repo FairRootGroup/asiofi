@@ -7,9 +7,11 @@
  ********************************************************************************/
 
 #include <asiofi.hpp>
+#include <boost/asio/buffer.hpp>
 #include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
+#include <boost/container/pmr/unsynchronized_pool_resource.hpp>
 #include <boost/program_options.hpp>
 #include <benchmark/benchmark.h>
 #include <cstdlib>
@@ -105,7 +107,8 @@ try {
     ("help,h", "Help screen")
     ("version,v", "Print version")
     ("memory", "Run local memory benchmark")
-    ("port,p", bpo::value<std::string>()->default_value("5000"), "Server port");
+    ("port,p", bpo::value<std::string>()->default_value("5000"), "Server port")
+    ("server,s", "Run server, otherwise client");
   
   bpo::options_description hidden;
   hidden.add_options()
@@ -122,8 +125,8 @@ try {
 
   if (vm.count("help")) {
     std::cout << "Usage:" << std::endl;
-    std::cout << "  afi_msg_bw [OPTIONS]                Start server" << std::endl;
-    std::cout << "  afi_msg_bw [OPTIONS] <host>         Connect to server" << std::endl;
+    std::cout << "  afi_msg_bw [OPTIONS] -s <ip>      Start server" << std::endl;
+    std::cout << "  afi_msg_bw [OPTIONS] <ip>         Connect to server" << std::endl;
     std::cout << std::endl << "Bandwidth test for MSG endpoints." << std::endl << std::endl;
     std::cout << opts << std::endl;
     std::exit(EXIT_SUCCESS);
@@ -169,12 +172,30 @@ auto client(const std::string& address, const std::string& port) -> int
   // std::cout << info << std::endl;
   asiofi::fabric fabric(info);
   asiofi::domain domain(fabric);
-  asiofi::endpoint ep(io_context, domain);
-  ep.enable();
-  ep.connect([]{
-    std::cout << "connected" << std::endl;
-  });
+  asiofi::endpoint endpoint(io_context, domain);
+  endpoint.enable();
 
+  boost::container::pmr::unsynchronized_pool_resource pool_mr;
+  long long counter(1);
+
+  auto recv_handler = [&](boost::asio::mutable_buffer buffer) {
+    pool_mr.deallocate(buffer.data(), buffer.size());
+    ++counter;
+    std::cout << ".";
+    if (counter == 100) {
+      signals.cancel();
+      std::cout << std::endl;
+    }
+  };
+
+  auto connect_handler = [&]{
+    for (int i = 0; i < 100; ++i) {
+      boost::asio::mutable_buffer buffer(pool_mr.allocate(1024*1024), 1024*1024);
+      endpoint.recv(buffer, recv_handler);
+    }
+  };
+
+  endpoint.connect(connect_handler);
   io_context.run();
 
   return EXIT_SUCCESS;
@@ -199,41 +220,33 @@ auto server(const std::string& address, const std::string& port) -> int
   asiofi::domain domain(fabric);
   asiofi::passive_endpoint pep(io_context, fabric);
   std::unique_ptr<asiofi::endpoint> endpoint(nullptr);
-  pep.listen([&](fid_t handle, asiofi::info info){
+
+  auto buffer = boost::asio::mutable_buffer(::operator new(1024*1024), 1024*1024);
+  long long counter(1);
+
+  auto send_handler = [&](boost::asio::mutable_buffer buffer) {
+    ++counter;
+    if (counter == 100) {
+      signals.cancel();
+      std::cout << std::endl;
+    }
+  };
+
+  auto accept_handler = [&]() {
+    for (int i = 0; i < 100; ++i) {
+      endpoint->send(buffer, send_handler);
+      std::cout << ".";
+    }
+  };
+
+  auto listen_handler = [&](fid_t handle, asiofi::info info) {
     endpoint = make_unique<asiofi::endpoint>(io_context, domain, info);
     endpoint->enable();
-    endpoint->accept([]{
-      std::cout << "connected" << std::endl;
-    });
-  });
+    endpoint->accept(accept_handler);
+  };
 
+  pep.listen(listen_handler);
   io_context.run();
-
-  std::cout << "ended?" << std::endl;
-  // fi_cq_attr cq_attr_rx = {0, 0, FI_CQ_FORMAT_DATA, FI_WAIT_UNSPEC, 0, FI_CQ_COND_NONE, nullptr};
-  // cq_attr_rx.size = info->rx_attr->size;
-  // fi_cq_attr cq_attr_tx = {0, 0, FI_CQ_FORMAT_DATA, FI_WAIT_UNSPEC, 0, FI_CQ_COND_NONE, nullptr};
-  // cq_attr_tx.size = info->tx_attr->size;
-  // size_t               size;      [> # entries for CQ <]
-  // uint64_t             flags;     [> operation flags <]
-  // enum fi_cq_format    format;    [> completion format <]
-  // enum fi_wait_obj     wait_obj;  [> requested wait object <]
-  // int                  signaling_vector; [> interrupt affinity <]
-  // enum fi_cq_wait_cond wait_cond; [> wait condition format <]
-  // struct fid_wait     *wait_set;  [> optional wait set <]
-  // ret = fi_cq_open(fdomain, &attr_rx, &cq_rx, &ctx);
-  // if (ret != FI_SUCCESS)
-    // std::cerr << "Failed creating ofi RX completion queue, reason: " << fi_strerror(ret) << std::endl;
-  // ret = fi_cq_open(fdomain, &attr_tx, &cq_tx, &ctx);
-  // if (ret != FI_SUCCESS)
-    // std::cerr << "Failed creating ofi TX completion queue, reason: " << fi_strerror(ret) << std::endl;
-//
-//
-	// if (av) {
-    // auto ret = fi_close(&av->fid);
-    // if (ret != FI_SUCCESS)
-      // std::cerr << "Failed closing ofi address vector, reason: " << fi_strerror(ret) << std::endl;
-  // }
 
   return EXIT_SUCCESS;
 }
@@ -243,9 +256,9 @@ auto main(int argc, char** argv) -> int
   bpo::variables_map vm;
   handle_cli(argc, argv, vm);
 
-  if (vm.count("host")) {
-    return client(vm["host"].as<std::string>(), vm["port"].as<std::string>());
+  if (vm.count("server")) {
+    return server(vm["host"].as<std::string>(), vm["port"].as<std::string>());
   } else {
-    return server("127.0.0.1", vm["port"].as<std::string>());
+    return client(vm["host"].as<std::string>(), vm["port"].as<std::string>());
   }
 }

@@ -32,7 +32,7 @@ option(BUILD_FABTESTS "Build fabtests." OFF)
 if(Boost_INCLUDE_DIR) # Silence output, if Boost was found already
   set(SILENCE_BOOST QUIET)
 endif()
-find_package(Boost 1.64 ${SILENCE_BOOST} REQUIRED COMPONENTS system program_options)
+find_package(Boost 1.67 ${SILENCE_BOOST} REQUIRED COMPONENTS system program_options container)
 find_package(OFI 1.6.0 REQUIRED COMPONENTS fi_sockets)
 
 if(BUILD_FABTESTS)
