@@ -80,10 +80,10 @@ struct hints
   }
 
   /// copy ctor
-  explicit hints(const hints& rhs) : m_info(fi_dupinfo(get_wrapped_obj(rhs))) { }
+  hints(const hints& rhs) : m_info(fi_dupinfo(get_wrapped_obj(rhs))) { }
 
   /// move ctor
-  explicit hints(hints&& rhs)
+  hints(hints&& rhs)
   : m_info(std::move(rhs.m_info))
   {
     rhs.m_info = nullptr;
@@ -99,6 +99,9 @@ struct hints
 
   protected:
   fi_info* m_info;
+
+  /// adoption ctor
+  explicit hints(fi_info* adopted_info) : m_info(adopted_info) { }
 }; /* struct hints */
 
 /**
@@ -127,11 +130,14 @@ struct info : hints
   /// (default) query ctor #4
   info() : info(hints()) { }
 
+  /// adoption ctor
+  explicit info(fi_info* adopted_info) : hints(adopted_info) { }
+
   /// copy ctor
-  explicit info(const info& rhs) : hints(rhs) { }
+  info(const info& rhs) : hints(rhs) { }
 
   /// move ctor
-  explicit info(info&& rhs) : hints(rhs) { }
+  info(info&& rhs) : hints(rhs) { }
 }; /* struct info */
 
 /**

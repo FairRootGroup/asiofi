@@ -12,12 +12,13 @@
 #include <asiofi/domain.hpp>
 #include <asiofi/errno.hpp>
 #include <asiofi/fabric.hpp>
+#include <boost/asio/dispatch.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
 #include <iostream>
 #include <rdma/fi_cm.h>
 #include <rdma/fi_endpoint.h>
-#include <type_traits>
+#include <utility>
 
 namespace asiofi
 {
@@ -32,10 +33,10 @@ struct endpoint
   friend auto get_wrapped_obj(const endpoint& ep) -> fid_ep* { return ep.m_endpoint; }
 
   /// ctor #1
-  explicit endpoint(boost::asio::io_context& io_context, const domain& domain)
+  explicit endpoint(boost::asio::io_context& io_context, const domain& domain, const info& info)
   : m_io_context(io_context)
   , m_domain(domain)
-  , m_endpoint(create_endpoint(domain, m_context))
+  , m_endpoint(create_endpoint(domain, info, m_context))
   , m_eq(create_event_queue(domain.get_fabric(), m_context))
   , m_eq_fd(io_context, get_native_wait_fd(m_eq))
   {
@@ -45,14 +46,20 @@ struct endpoint
       throw runtime_error("Failed binding ofi event queue to ofi endpoint, reason: ", fi_strerror(rc));
   }
 
+  /// ctor #2
+  explicit endpoint(boost::asio::io_context& io_context, const domain& domain)
+  : endpoint(io_context, domain, domain.get_info())
+  {
+  }
+
   /// (default) ctor
-  explicit endpoint() = delete;
+  endpoint() = delete;
 
   /// copy ctor
-  explicit endpoint(const endpoint& rh) = delete;
+  endpoint(const endpoint& rh) = delete;
 
   /// move ctor
-  explicit endpoint(endpoint&& rhs)
+  endpoint(endpoint&& rhs)
   : m_context(std::move(rhs.m_context))
   , m_io_context(rhs.m_io_context)
   , m_domain(std::move(rhs.m_domain))
@@ -78,21 +85,12 @@ struct endpoint
       throw runtime_error("Failed transitioning ofi endpoint to enabled state, reason: ", fi_strerror(rc));
   }
 
-  template<typename T>
-  auto connect(const T& param) -> void
-  {
-    int rc;
-    if (std::is_same<NoParam, T>::value) {
-      rc = fi_connect(m_endpoint,
-                      get_wrapped_obj(m_domain.get_fabric().get_info())->dest_addr,
-                      nullptr,
-                      0);
-    } else {
-      rc = fi_connect(m_endpoint,
-                      get_wrapped_obj(m_domain.get_fabric().get_info())->dest_addr,
-                      &param,
-                      sizeof(T));
-    }
+  template<typename CompletionHandler>
+  auto connect(CompletionHandler&& handler) -> void {
+    auto rc = fi_connect(m_endpoint,
+                         get_wrapped_obj(m_domain.get_fabric().get_info())->dest_addr,
+                         nullptr,
+                         0);
     if (rc != FI_SUCCESS)
       throw runtime_error("Failed initiating connection to ", "", " on ofi endpoint, reason: ", fi_strerror(rc));
 
@@ -101,9 +99,30 @@ struct endpoint
     if (rc == FI_SUCCESS) {
       m_eq_fd.async_wait(
         boost::asio::posix::stream_descriptor::wait_read,
-        [](const boost::system::error_code& error) {
+        [&](const boost::system::error_code& error) {
           if (!error) {
-            std::cout << "CM event(s) pending" << std::endl;
+            // fi_eq_cm_entry {
+            // fid_t            fid;        [> fid associated with request <]
+            // struct fi_info  *info;       [> endpoint information <]
+            // uint8_t          data[];     [> app connection data <]
+            // };
+            fi_eq_cm_entry entry;
+            uint32_t event;
+            auto rc = fi_eq_sread(m_eq, &event, &entry, sizeof(entry), 100, 0);
+            if (rc == -FI_EAVAIL) {
+              // not implemented yet, see ft_eq_readerr()
+              throw runtime_error("Error pending on event queue, handling not yet implemented.");
+            } else if (rc < 0) {
+              throw runtime_error("Failed reading from event queue, reason: ", fi_strerror(rc));
+            } else {
+              if (event == FI_CONNECTED) {
+                handler();
+              } else {
+                throw runtime_error("Unexpected event in event queue, found: ", event);
+              }
+            }
+          } else {
+            // not implemented yet
           }
         }
       );
@@ -111,8 +130,50 @@ struct endpoint
       throw runtime_error("Not yet implemented");
     }
   }
-  struct NoParam { };
-  auto connect() -> void { connect<NoParam>(NoParam()); }
+
+  template<typename CompletionHandler>
+  auto accept(CompletionHandler&& handler) -> void
+  {
+    auto rc = fi_accept(m_endpoint, nullptr, 0);
+    if (rc != FI_SUCCESS)
+      throw runtime_error("Failed accepting connection, reason: ", fi_strerror(rc));
+
+    auto wait_set = &m_eq->fid;
+    rc = fi_trywait(get_wrapped_obj(m_domain.get_fabric()), &wait_set, 1);
+    if (rc == FI_SUCCESS) {
+      m_eq_fd.async_wait(
+        boost::asio::posix::stream_descriptor::wait_read,
+        [&](const boost::system::error_code& error) {
+          if (!error) {
+            // fi_eq_cm_entry {
+            // fid_t            fid;        [> fid associated with request <]
+            // struct fi_info  *info;       [> endpoint information <]
+            // uint8_t          data[];     [> app connection data <]
+            // };
+            fi_eq_cm_entry entry;
+            uint32_t event;
+            auto rc = fi_eq_sread(m_eq, &event, &entry, sizeof(entry), 100, 0);
+            if (rc == -FI_EAVAIL) {
+              // not implemented yet, see ft_eq_readerr()
+              throw runtime_error("Error pending on event queue, handling not yet implemented.");
+            } else if (rc < 0) {
+              throw runtime_error("Failed reading from event queue, reason: ", fi_strerror(rc));
+            } else {
+              if (event == FI_CONNECTED) {
+                handler();
+              } else {
+                throw runtime_error("Unexpected event in event queue, found: ", event);
+              }
+            }
+          } else {
+            // not implemented yet
+          }
+        }
+      );
+    } else {
+      throw runtime_error("Not yet implemented");
+    }
+  }
 
   private:
   fi_context m_context;
@@ -122,11 +183,11 @@ struct endpoint
   fid_eq* m_eq;
   boost::asio::posix::stream_descriptor m_eq_fd;
 
-  static auto create_endpoint(const domain& domain, fi_context& context) -> fid_ep* 
+  static auto create_endpoint(const domain& domain, const info& info, fi_context& context) -> fid_ep* 
   {
     fid_ep* ep;
     auto rc = fi_endpoint(get_wrapped_obj(domain),
-                          get_wrapped_obj(domain.get_info()),
+                          get_wrapped_obj(info),
                           &ep,
                           &context);
     if (rc != 0)
@@ -219,7 +280,8 @@ struct passive_endpoint
   }
 
   /// Listen for connection requests
-  auto listen() -> void
+  template<typename CompletionHandler>
+  auto listen(CompletionHandler&& handler) -> void
   {
     auto rc = fi_listen(m_pep);
     if (rc != 0)
@@ -230,9 +292,26 @@ struct passive_endpoint
     if (rc == FI_SUCCESS) {
       m_eq_fd.async_wait(
         boost::asio::posix::stream_descriptor::wait_read,
-        [](const boost::system::error_code& error) {
+        [&](const boost::system::error_code& error) {
           if (!error) {
-            std::cout << "CM event(s) pending" << std::endl;
+            fi_eq_cm_entry entry;
+            uint32_t event;
+            auto rc = fi_eq_sread(m_eq, &event, &entry, sizeof(entry), 100, 0);
+            if (rc == -FI_EAVAIL) {
+              // not implemented yet, see ft_eq_readerr()
+              throw runtime_error("Error pending on event queue, handling not yet implemented.");
+            } else if (rc < 0) {
+              throw runtime_error("Failed reading from event queue, reason: ", fi_strerror(rc));
+            } else {
+              if (event == FI_CONNREQ) {
+                asiofi::info info(entry.info);
+                handler(entry.fid, std::move(info));
+              } else {
+                throw runtime_error("Unexpected event in event queue, found: ", event);
+              }
+            }
+          } else {
+            // not implemented yet
           }
         }
       );

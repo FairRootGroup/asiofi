@@ -14,10 +14,17 @@
 #include <benchmark/benchmark.h>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <sys/mman.h>
 
 namespace bpo = boost::program_options;
+
+template<typename T, typename... Args>
+std::unique_ptr<T> make_unique(Args&&... args)
+{
+    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
 
 auto bm_naive(benchmark::State& state) -> void
 {
@@ -164,7 +171,9 @@ auto client(const std::string& address, const std::string& port) -> int
   asiofi::domain domain(fabric);
   asiofi::endpoint ep(io_context, domain);
   ep.enable();
-  ep.connect();
+  ep.connect([]{
+    std::cout << "connected" << std::endl;
+  });
 
   io_context.run();
 
@@ -189,10 +198,18 @@ auto server(const std::string& address, const std::string& port) -> int
   asiofi::fabric fabric(info);
   asiofi::domain domain(fabric);
   asiofi::passive_endpoint pep(io_context, fabric);
-  pep.listen();
+  std::unique_ptr<asiofi::endpoint> endpoint(nullptr);
+  pep.listen([&](fid_t handle, asiofi::info info){
+    endpoint = make_unique<asiofi::endpoint>(io_context, domain, info);
+    endpoint->enable();
+    endpoint->accept([]{
+      std::cout << "connected" << std::endl;
+    });
+  });
 
   io_context.run();
 
+  std::cout << "ended?" << std::endl;
   // fi_cq_attr cq_attr_rx = {0, 0, FI_CQ_FORMAT_DATA, FI_WAIT_UNSPEC, 0, FI_CQ_COND_NONE, nullptr};
   // cq_attr_rx.size = info->rx_attr->size;
   // fi_cq_attr cq_attr_tx = {0, 0, FI_CQ_FORMAT_DATA, FI_WAIT_UNSPEC, 0, FI_CQ_COND_NONE, nullptr};
