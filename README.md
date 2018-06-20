@@ -2,7 +2,12 @@
 
 C++ Boost.Asio language bindings for OFI libfabric.
 
-UNDER CONSTRUCTION
+UNDER DEVELOPMENT
+
+## Introduction
+
+This project is developed as a dependency of another [project](https://github.com/FairRootGroup/FairMQ) which currently
+limits the scope. If you are interested in extending the scope and/or collaborating, we are welcoming you to talk to us.
 
 ## Dependencies
 
