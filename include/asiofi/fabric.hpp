@@ -68,11 +68,11 @@ struct hints
   hints() : m_info(fi_allocinfo())
   {
     m_info->caps = FI_MSG;
-    m_info->mode = FI_CONTEXT;
+    m_info->mode = FI_CONTEXT | FI_LOCAL_MR;
     m_info->addr_format = FI_SOCKADDR_IN;
     m_info->fabric_attr->prov_name = strdup("sockets");
     m_info->ep_attr->type = FI_EP_MSG;
-    // m_info->domain_attr->mr_mode = FI_MR_BASIC | FI_MR_SCALABLE;
+    m_info->domain_attr->mr_mode = FI_MR_LOCAL | FI_MR_ALLOCATED;
     m_info->domain_attr->threading = FI_THREAD_SAFE;
     m_info->domain_attr->control_progress = FI_PROGRESS_AUTO;
     m_info->domain_attr->data_progress = FI_PROGRESS_AUTO;
