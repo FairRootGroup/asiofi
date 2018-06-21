@@ -7,15 +7,18 @@
  ********************************************************************************/
 
 #include <asiofi.hpp>
+#include <atomic>
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/container/pmr/unsynchronized_pool_resource.hpp>
 #include <boost/program_options.hpp>
 #include <benchmark/benchmark.h>
 #include <chrono>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -110,7 +113,10 @@ try {
     ("memory", "Run local memory benchmark")
     ("port,p", bpo::value<std::string>()->default_value("5000"), "Server port")
     ("server,s", "Run server, otherwise client")
-    ("provider,P", bpo::value<std::string>()->default_value("sockets"), "Provider");
+    ("provider,P", bpo::value<std::string>()->default_value("sockets"), "Provider")
+    ("message-size,m", bpo::value<size_t>()->default_value(1024*1024), "Message size in Byte")
+    ("iterations,i", bpo::value<size_t>()->default_value(100), "Number of messages to transfer");
+
   
   bpo::options_description hidden;
   hidden.add_options()
@@ -157,7 +163,11 @@ catch (const bpo::error& ex)
   std::exit(EXIT_FAILURE);
 }
 
-auto client(const std::string& address, const std::string& port, const std::string& provider) -> int
+auto client(const std::string& address,
+            const std::string& port,
+            const std::string& provider,
+            size_t message_size,
+            size_t iterations) -> int
 {
   boost::asio::io_context io_context;
 
@@ -180,31 +190,49 @@ auto client(const std::string& address, const std::string& port, const std::stri
   endpoint.enable();
 
   boost::container::pmr::unsynchronized_pool_resource pool_mr;
-  long long counter(1);
+  size_t received(0);
+  size_t posted(0);
+  std::atomic<size_t> queued(0);
   std::chrono::time_point<std::chrono::steady_clock> start;
   std::chrono::time_point<std::chrono::steady_clock> stop;
+  boost::asio::steady_timer timer(io_context);
 
-  std::function<void(boost::asio::mutable_buffer)> recv_handler = [&](boost::asio::mutable_buffer buffer) {
-    assert(buffer.size() == 1024*1024);
+  std::function<void(const boost::system::error_code&)> post_recv_buffer;
+
+  auto recv_handler = [&](boost::asio::mutable_buffer buffer) {
+    assert(buffer.size() == message_size);
     pool_mr.deallocate(buffer.data(), buffer.size());
-    ++counter;
-    if (counter < 100) {
-      boost::asio::mutable_buffer buffer(pool_mr.allocate(1024*1024), 1024*1024);
-      endpoint.recv(buffer, recv_handler);
-    } else {
+    ++received;
+    --queued;
+    if (received == iterations) {
       stop = std::chrono::steady_clock::now();
       endpoint.shutdown();
       signals.cancel();
       auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
-      auto rate = 100. * 1000. / elapsed_ms;
-      std::cout << rate << " MB/s" << std::endl;
+      auto rate_MiB = (iterations * message_size * 1000.) / (1024. * 1024. * elapsed_ms);
+      auto rate_MB = (iterations * message_size * 1000.) / (1000. * 1000. * elapsed_ms);
+      std::cout << "elapsed time: " << elapsed_ms << " ms  data sent: " <<  (iterations * message_size) << " Bytes" << std::endl; 
+      std::cout << rate_MiB << " MiB/s  " << rate_MB << " MB/s" << std::endl;
+    }
+  };
+
+  post_recv_buffer = [&](const boost::system::error_code& error) {
+    while (queued <= 100 && posted <= iterations) {
+			boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
+			endpoint.recv(buffer, recv_handler);
+			++queued;
+      ++posted;
+    }
+
+    if (posted < iterations) {
+			timer.expires_after(std::chrono::milliseconds(50));
+			timer.async_wait(post_recv_buffer);
     }
   };
 
   auto connect_handler = [&]{
     start = std::chrono::steady_clock::now();
-    boost::asio::mutable_buffer buffer(pool_mr.allocate(1024*1024), 1024*1024);
-    endpoint.recv(buffer, recv_handler);
+    post_recv_buffer(boost::system::error_code());
   };
 
   endpoint.connect(connect_handler);
@@ -213,7 +241,11 @@ auto client(const std::string& address, const std::string& port, const std::stri
   return EXIT_SUCCESS;
 }
 
-auto server(const std::string& address, const std::string& port, const std::string& provider) -> int
+auto server(const std::string& address,
+            const std::string& port,
+            const std::string& provider,
+            size_t message_size,
+            size_t iterations) -> int
 {
   boost::asio::io_context io_context;
   
@@ -235,30 +267,49 @@ auto server(const std::string& address, const std::string& port, const std::stri
   asiofi::passive_endpoint pep(io_context, fabric);
   std::unique_ptr<asiofi::endpoint> endpoint(nullptr);
 
-  auto buffer = boost::asio::mutable_buffer(::operator new(1024*1024), 1024*1024);
-  long long counter(1);
+  auto buffer = boost::asio::mutable_buffer(::operator new(message_size), message_size);
+  size_t sent(0);
+  size_t posted(0);
+  std::atomic<size_t> queued(0);
   std::chrono::time_point<std::chrono::steady_clock> start;
   std::chrono::time_point<std::chrono::steady_clock> stop;
+  boost::asio::steady_timer timer(io_context);
+
+  std::function<void(const boost::system::error_code&)> post_send_buffer;
 
   auto send_handler = [&](boost::asio::mutable_buffer buffer) {
-    if (counter == 1) {
+    if (sent == 0) {
       start = std::chrono::steady_clock::now();
     }
-    ++counter;
-    if (counter == 100) {
+    ++sent;
+    --queued;
+    if (sent == iterations) {
       stop = std::chrono::steady_clock::now();
       endpoint->shutdown();
       signals.cancel();
       auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
-      auto rate = 100. * 1000. / elapsed_ms;
-      std::cout << rate << " MB/s" << std::endl;
+      auto rate_MiB = (iterations * message_size * 1000.) / (1024. * 1024. * elapsed_ms);
+      auto rate_MB = (iterations * message_size * 1000.) / (1000. * 1000. * elapsed_ms);
+      std::cout << "elapsed time: " << elapsed_ms << " ms  data sent: " <<  (iterations * message_size) << " Bytes" << std::endl; 
+      std::cout << rate_MiB << " MiB/s  " << rate_MB << " MB/s" << std::endl;
+    }
+  };
+
+  post_send_buffer = [&](const boost::system::error_code& error) {
+    while (queued <= 100 && posted <= iterations) {
+      endpoint->send(buffer, send_handler);
+			++queued;
+      ++posted;
+    } 
+
+    if (posted < iterations) {
+      timer.expires_after(std::chrono::milliseconds(50));
+      timer.async_wait(post_send_buffer);
     }
   };
 
   auto accept_handler = [&]() {
-    for (int i = 0; i < 100; ++i) {
-      endpoint->send(buffer, send_handler);
-    }
+    post_send_buffer(boost::system::error_code());
   };
 
   auto listen_handler = [&](fid_t handle, asiofi::info info) {
@@ -279,8 +330,16 @@ auto main(int argc, char** argv) -> int
   handle_cli(argc, argv, vm);
 
   if (vm.count("server")) {
-    return server(vm["host"].as<std::string>(), vm["port"].as<std::string>(), vm["provider"].as<std::string>());
+    return server(vm["host"].as<std::string>(),
+                  vm["port"].as<std::string>(),
+                  vm["provider"].as<std::string>(),
+                  vm["message-size"].as<size_t>(),
+                  vm["iterations"].as<size_t>());
   } else {
-    return client(vm["host"].as<std::string>(), vm["port"].as<std::string>(), vm["provider"].as<std::string>());
+    return client(vm["host"].as<std::string>(),
+                  vm["port"].as<std::string>(),
+                  vm["provider"].as<std::string>(),
+                  vm["message-size"].as<size_t>(),
+                  vm["iterations"].as<size_t>());
   }
 }
