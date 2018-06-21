@@ -13,6 +13,7 @@
 #include <asiofi/errno.hpp>
 #include <cstdint>
 #include <ostream>
+#include <string>
 #include <string.h> // strdup
 #include <rdma/fabric.h>
 
@@ -95,6 +96,12 @@ struct hints
   friend auto operator<<(std::ostream& os, const hints& hints) -> std::ostream&
   {
     return os << fi_tostr(hints.m_info, FI_TYPE_INFO);
+  }
+
+  auto set_provider(const std::string& provider) -> void
+  {
+    // TODO fix memory leak
+    m_info->fabric_attr->prov_name = strdup(provider.c_str());
   }
 
   protected:

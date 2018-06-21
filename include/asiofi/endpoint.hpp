@@ -94,15 +94,6 @@ struct endpoint
     rhs.m_tx_cq = nullptr;
   }
 
-  /// dtor
-  ~endpoint()
-  {
-    fi_close(&m_tx_cq->fid);
-    fi_close(&m_rx_cq->fid);
-    fi_close(&m_eq->fid);
-    fi_close(&m_endpoint->fid);
-  }
-
   /// transition endpoint to enabled state
   auto enable() -> void
   {
@@ -287,6 +278,22 @@ struct endpoint
     } else {
       throw runtime_error("Not yet implemented");
     }
+  }
+
+  auto shutdown() -> void
+  {
+    auto rc = fi_shutdown(m_endpoint, 0);
+    if (rc != FI_SUCCESS)
+      throw runtime_error("Failed shutting down ofi endpoint, reason: ", fi_strerror(rc));
+  }
+
+  /// dtor
+  ~endpoint()
+  {
+    fi_close(&m_endpoint->fid);
+    fi_close(&m_tx_cq->fid);
+    fi_close(&m_rx_cq->fid);
+    fi_close(&m_eq->fid);
   }
 
   private:

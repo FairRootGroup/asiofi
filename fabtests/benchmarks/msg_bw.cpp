@@ -14,6 +14,7 @@
 #include <boost/container/pmr/unsynchronized_pool_resource.hpp>
 #include <boost/program_options.hpp>
 #include <benchmark/benchmark.h>
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -108,7 +109,8 @@ try {
     ("version,v", "Print version")
     ("memory", "Run local memory benchmark")
     ("port,p", bpo::value<std::string>()->default_value("5000"), "Server port")
-    ("server,s", "Run server, otherwise client");
+    ("server,s", "Run server, otherwise client")
+    ("provider,P", bpo::value<std::string>()->default_value("sockets"), "Provider");
   
   bpo::options_description hidden;
   hidden.add_options()
@@ -155,7 +157,7 @@ catch (const bpo::error& ex)
   std::exit(EXIT_FAILURE);
 }
 
-auto client(const std::string& address, const std::string& port) -> int
+auto client(const std::string& address, const std::string& port, const std::string& provider) -> int
 {
   boost::asio::io_context io_context;
 
@@ -168,7 +170,9 @@ auto client(const std::string& address, const std::string& port) -> int
     }
   });
 
-  asiofi::info info(address.c_str(), port.c_str(), 0, asiofi::hints());
+  asiofi::hints hints;
+  hints.set_provider(provider);
+  asiofi::info info(address.c_str(), port.c_str(), 0, hints);
   // std::cout << info << std::endl;
   asiofi::fabric fabric(info);
   asiofi::domain domain(fabric);
@@ -177,22 +181,30 @@ auto client(const std::string& address, const std::string& port) -> int
 
   boost::container::pmr::unsynchronized_pool_resource pool_mr;
   long long counter(1);
+  std::chrono::time_point<std::chrono::steady_clock> start;
+  std::chrono::time_point<std::chrono::steady_clock> stop;
 
-  auto recv_handler = [&](boost::asio::mutable_buffer buffer) {
+  std::function<void(boost::asio::mutable_buffer)> recv_handler = [&](boost::asio::mutable_buffer buffer) {
+    assert(buffer.size() == 1024*1024);
     pool_mr.deallocate(buffer.data(), buffer.size());
     ++counter;
-    std::cout << ".";
-    if (counter == 100) {
+    if (counter < 100) {
+      boost::asio::mutable_buffer buffer(pool_mr.allocate(1024*1024), 1024*1024);
+      endpoint.recv(buffer, recv_handler);
+    } else {
+      stop = std::chrono::steady_clock::now();
+      endpoint.shutdown();
       signals.cancel();
-      std::cout << std::endl;
+      auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
+      auto rate = 100. * 1000. / elapsed_ms;
+      std::cout << rate << " MB/s" << std::endl;
     }
   };
 
   auto connect_handler = [&]{
-    for (int i = 0; i < 100; ++i) {
-      boost::asio::mutable_buffer buffer(pool_mr.allocate(1024*1024), 1024*1024);
-      endpoint.recv(buffer, recv_handler);
-    }
+    start = std::chrono::steady_clock::now();
+    boost::asio::mutable_buffer buffer(pool_mr.allocate(1024*1024), 1024*1024);
+    endpoint.recv(buffer, recv_handler);
   };
 
   endpoint.connect(connect_handler);
@@ -201,7 +213,7 @@ auto client(const std::string& address, const std::string& port) -> int
   return EXIT_SUCCESS;
 }
 
-auto server(const std::string& address, const std::string& port) -> int
+auto server(const std::string& address, const std::string& port, const std::string& provider) -> int
 {
   boost::asio::io_context io_context;
   
@@ -214,7 +226,9 @@ auto server(const std::string& address, const std::string& port) -> int
     }
   });
 
-  asiofi::info info(address.c_str(), port.c_str(), FI_SOURCE, asiofi::hints());
+  asiofi::hints hints;
+  hints.set_provider(provider);
+  asiofi::info info(address.c_str(), port.c_str(), FI_SOURCE, hints);
   // std::cout << info << std::endl;
   asiofi::fabric fabric(info);
   asiofi::domain domain(fabric);
@@ -223,19 +237,27 @@ auto server(const std::string& address, const std::string& port) -> int
 
   auto buffer = boost::asio::mutable_buffer(::operator new(1024*1024), 1024*1024);
   long long counter(1);
+  std::chrono::time_point<std::chrono::steady_clock> start;
+  std::chrono::time_point<std::chrono::steady_clock> stop;
 
   auto send_handler = [&](boost::asio::mutable_buffer buffer) {
+    if (counter == 1) {
+      start = std::chrono::steady_clock::now();
+    }
     ++counter;
     if (counter == 100) {
+      stop = std::chrono::steady_clock::now();
+      endpoint->shutdown();
       signals.cancel();
-      std::cout << std::endl;
+      auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
+      auto rate = 100. * 1000. / elapsed_ms;
+      std::cout << rate << " MB/s" << std::endl;
     }
   };
 
   auto accept_handler = [&]() {
     for (int i = 0; i < 100; ++i) {
       endpoint->send(buffer, send_handler);
-      std::cout << ".";
     }
   };
 
@@ -257,8 +279,8 @@ auto main(int argc, char** argv) -> int
   handle_cli(argc, argv, vm);
 
   if (vm.count("server")) {
-    return server(vm["host"].as<std::string>(), vm["port"].as<std::string>());
+    return server(vm["host"].as<std::string>(), vm["port"].as<std::string>(), vm["provider"].as<std::string>());
   } else {
-    return client(vm["host"].as<std::string>(), vm["port"].as<std::string>());
+    return client(vm["host"].as<std::string>(), vm["port"].as<std::string>(), vm["provider"].as<std::string>());
   }
 }
