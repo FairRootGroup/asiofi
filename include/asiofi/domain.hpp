@@ -13,6 +13,7 @@
 #include <asiofi/fabric.hpp>
 #include <boost/asio/buffer.hpp>
 #include <rdma/fi_domain.h>
+#include <iostream>
 
 namespace asiofi
 {
@@ -134,6 +135,7 @@ struct memory_region
   explicit memory_region(const domain& domain, boost::asio::mutable_buffer buffer, access access)
   : m_memory_region(create_memory_region(domain, buffer, access, m_context))
   {
+    std::cout << "registered buffer " << buffer.data() << std::endl;
   }
 
   memory_region(const memory_region&) = delete;
@@ -146,8 +148,11 @@ struct memory_region
 
   ~memory_region()
   {
-    if (m_memory_region)
+    if (m_memory_region) {
       fi_close(&m_memory_region->fid);
+
+      std::cout << "UNregistered buffer" << std::endl;
+    }
   }
 
   private:

@@ -202,7 +202,7 @@ struct endpoint
     auto rc = fi_send(m_endpoint, buffer.data(), buffer.size(), nullptr, dummy_addr, &m_context);
     if (rc != FI_SUCCESS)
       throw runtime_error("Failed posting a TX buffer on ofi endpoint, reason: ", fi_strerror(rc));
-
+    std::cout << "send buffer POSTED" << std::endl;
     auto wait_set = &m_tx_cq->fid;
     rc = fi_trywait(get_wrapped_obj(m_domain.get_fabric()), &wait_set, 1);
     if (rc == FI_SUCCESS) {
@@ -246,6 +246,7 @@ struct endpoint
               } else if (rc < 0) {
                 throw runtime_error("Failed reading from TX completion queue, reason: ", fi_strerror(rc));
               } else {
+                std::cout << "send buffer SENT" << std::endl;
                 handler(boost::asio::mutable_buffer(entry.buf, entry.len));
               }
             } else {
