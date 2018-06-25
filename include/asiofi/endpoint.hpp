@@ -16,7 +16,9 @@
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/io_context_strand.hpp>
+#include <boost/asio/placeholders.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
+#include <functional>
 #include <iostream>
 #include <rdma/fi_cm.h>
 #include <rdma/fi_endpoint.h>
@@ -196,6 +198,7 @@ struct endpoint
   auto send(boost::asio::mutable_buffer buffer, CompletionHandler&& handler) -> void
   {
     fi_addr_t dummy_addr;
+    memory_region mr(m_domain, buffer, mr::access::send);
     auto rc = fi_send(m_endpoint, buffer.data(), buffer.size(), nullptr, dummy_addr, &m_context);
     if (rc != FI_SUCCESS)
       throw runtime_error("Failed posting a TX buffer on ofi endpoint, reason: ", fi_strerror(rc));
@@ -206,7 +209,7 @@ struct endpoint
       m_tx_cq_fd.async_wait(
         boost::asio::posix::stream_descriptor::wait_read,
           boost::asio::bind_executor(m_tx_strand,
-          [&](const boost::system::error_code& error) {
+          [&, keep_mr_alive(std::move(mr))](const boost::system::error_code& error) {
             if (!error) {
               // struct fi_cq_data_entry {
               // void     *op_context; [> operation context <]
@@ -296,6 +299,7 @@ struct endpoint
   auto recv(boost::asio::mutable_buffer buffer, CompletionHandler&& handler) -> void
   {
     fi_addr_t dummy_addr;
+    memory_region mr(m_domain, buffer, mr::access::recv);
     auto rc = fi_recv(m_endpoint, buffer.data(), buffer.size(), nullptr, dummy_addr, &m_context);
     if (rc != FI_SUCCESS)
       throw runtime_error("Failed posting a RX buffer on ofi endpoint, reason: ", fi_strerror(rc));
@@ -306,7 +310,7 @@ struct endpoint
       m_rx_cq_fd.async_wait(
         boost::asio::posix::stream_descriptor::wait_read,
           boost::asio::bind_executor(m_rx_strand,
-          [&](const boost::system::error_code& error) {
+          [&, keep_mr_alive(std::move(mr))](const boost::system::error_code& error) {
             if (!error) {
               // struct fi_cq_data_entry {
               // void     *op_context; [> operation context <]

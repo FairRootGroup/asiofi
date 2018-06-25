@@ -11,6 +11,7 @@
 
 #include <asiofi/errno.hpp>
 #include <asiofi/fabric.hpp>
+#include <boost/asio/buffer.hpp>
 #include <rdma/fi_domain.h>
 
 namespace asiofi
@@ -41,10 +42,10 @@ struct domain
   explicit domain() = delete;
 
   /// copy ctor
-  explicit domain(const domain&) = delete;
+  domain(const domain&) = delete;
 
   /// move ctor
-  explicit domain(domain&& rhs)
+  domain(domain&& rhs)
   : m_fabric(std::move(rhs.m_fabric))
   , m_context(std::move(rhs.m_context))
   , m_domain(std::move(rhs.m_domain))
@@ -94,10 +95,10 @@ struct address_vector
   explicit address_vector() = delete;
 
   /// copy ctor
-  explicit address_vector(const address_vector&) = delete;
+  address_vector(const address_vector&) = delete;
 
   /// move ctor
-  explicit address_vector(address_vector&& rhs)
+  address_vector(address_vector&& rhs)
   : m_context(std::move(rhs.m_context))
   , m_av(std::move(rhs.m_av))
   {
@@ -113,6 +114,58 @@ struct address_vector
 }; /* struct address_vector */
 
 using av = address_vector;
+
+
+/**
+ * @class memory_region domain.hpp <include/asiofi/domain.hpp>
+ * @brief A memory buffer registered for ofi access
+ */
+struct memory_region
+{
+  enum class access : uint64_t {
+    send = FI_SEND,
+    recv = FI_RECV,
+    read = FI_READ,
+    write = FI_WRITE,
+    remote_read = FI_REMOTE_READ,
+    remote_write = FI_REMOTE_WRITE
+  };
+
+  explicit memory_region(const domain& domain, boost::asio::mutable_buffer buffer, access access)
+  : m_memory_region(create_memory_region(domain, buffer, access, m_context))
+  {
+  }
+
+  memory_region(const memory_region&) = delete;
+
+  memory_region(memory_region&& rhs)
+  : m_memory_region(std::move(rhs.m_memory_region))
+  {
+    m_memory_region = nullptr;
+  }
+
+  ~memory_region()
+  {
+    if (m_memory_region)
+      fi_close(&m_memory_region->fid);
+  }
+
+  private:
+  fi_context m_context;
+  fid_mr* m_memory_region;
+
+  static auto create_memory_region(const domain& domain, boost::asio::mutable_buffer buffer, access access, fi_context& context) -> fid_mr*
+  {
+    fid_mr* mr;
+    auto rc = fi_mr_reg(get_wrapped_obj(domain), buffer.data(), buffer.size(), static_cast<uint64_t>(access), 0, 0, 0, &mr, &context);
+    if (rc != 0)
+      throw runtime_error("Failed registering ofi memory region, reason: ", fi_strerror(rc));
+
+    return mr;
+  }
+}; /* struct memory_region */
+
+using mr = memory_region;
 
 } /* namespace asiofi */
 
