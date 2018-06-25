@@ -117,7 +117,7 @@ using av = address_vector;
 
 
 /**
- * @class memory_region domain.hpp <include/asiofi/domain.hpp>
+ * @struct memory_region domain.hpp <include/asiofi/domain.hpp>
  * @brief A memory buffer registered for ofi access
  */
 struct memory_region

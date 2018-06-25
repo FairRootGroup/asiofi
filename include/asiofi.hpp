@@ -13,6 +13,7 @@
 #include <asiofi/endpoint.hpp>
 #include <asiofi/errno.hpp>
 #include <asiofi/fabric.hpp>
+#include <asiofi/memory_resources.hpp>
 #include <asiofi/version.hpp>
 
 #endif /* ASIOFI_HPP */

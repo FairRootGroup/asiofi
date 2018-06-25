@@ -191,7 +191,7 @@ auto client(const std::string& address,
   asiofi::endpoint endpoint(io_context, domain);
   endpoint.enable();
 
-  boost::container::pmr::unsynchronized_pool_resource pool_mr;
+  asiofi::allocated_pool_resource pool_mr;
   size_t received(0);
   size_t posted(0);
   std::atomic<size_t> queued(0);
@@ -214,12 +214,12 @@ auto client(const std::string& address,
       auto rate_MiB = (iterations * message_size * 1000.) / (1024. * 1024. * elapsed_ms);
       auto rate_MB = (iterations * message_size * 1000.) / (1000. * 1000. * elapsed_ms);
       std::cout << "elapsed time: " << elapsed_ms << " ms  data sent: " <<  (iterations * message_size) << " Bytes" << std::endl; 
-      std::cout << rate_MiB << " MiB/s  " << rate_MB << " MB/s" << std::endl;
+      std::cout << "bandwidth used: " << rate_MiB << " MiB/s  " << rate_MB << " MB/s" << std::endl;
     }
   };
 
   post_recv_buffer = [&](const boost::system::error_code& error) {
-    while (queued <= queue_size && posted <= iterations) {
+    while (queued < queue_size && posted < iterations) {
 			boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
 			endpoint.recv(buffer, recv_handler);
 			++queued;
@@ -270,7 +270,7 @@ auto server(const std::string& address,
   asiofi::passive_endpoint pep(io_context, fabric);
   std::unique_ptr<asiofi::endpoint> endpoint(nullptr);
 
-  boost::container::pmr::unsynchronized_pool_resource pool_mr;
+  asiofi::allocated_pool_resource pool_mr;
   size_t sent(0);
   size_t posted(0);
   std::atomic<size_t> queued(0);
@@ -296,12 +296,12 @@ auto server(const std::string& address,
       auto rate_MiB = (iterations * message_size * 1000.) / (1024. * 1024. * elapsed_ms);
       auto rate_MB = (iterations * message_size * 1000.) / (1000. * 1000. * elapsed_ms);
       std::cout << "elapsed time: " << elapsed_ms << " ms  data sent: " <<  (iterations * message_size) << " Bytes" << std::endl; 
-      std::cout << rate_MiB << " MiB/s  " << rate_MB << " MB/s" << std::endl;
+      std::cout << "bandwidth used: " << rate_MiB << " MiB/s  " << rate_MB << " MB/s" << std::endl;
     }
   };
 
   post_send_buffer = [&](const boost::system::error_code& error) {
-    while (queued <= queue_size && posted <= iterations) {
+    while (queued < queue_size && posted < iterations) {
       boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
       endpoint->send(buffer, send_handler);
 			++queued;
