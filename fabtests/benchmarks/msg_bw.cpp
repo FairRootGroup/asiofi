@@ -115,7 +115,8 @@ try {
     ("server,s", "Run server, otherwise client")
     ("provider,P", bpo::value<std::string>()->default_value("sockets"), "Provider")
     ("message-size,m", bpo::value<size_t>()->default_value(1024*1024), "Message size in Byte")
-    ("iterations,i", bpo::value<size_t>()->default_value(100), "Number of messages to transfer");
+    ("iterations,i", bpo::value<size_t>()->default_value(100), "Number of messages to transfer")
+    ("queue-size,q", bpo::value<size_t>()->default_value(10), "Maximum number of transfers to queue in parallel");
 
   
   bpo::options_description hidden;
@@ -167,7 +168,8 @@ auto client(const std::string& address,
             const std::string& port,
             const std::string& provider,
             size_t message_size,
-            size_t iterations) -> int
+            size_t iterations,
+            size_t queue_size) -> int
 {
   boost::asio::io_context io_context;
 
@@ -217,7 +219,7 @@ auto client(const std::string& address,
   };
 
   post_recv_buffer = [&](const boost::system::error_code& error) {
-    while (queued <= 100 && posted <= iterations) {
+    while (queued <= queue_size && posted <= iterations) {
 			boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
 			endpoint.recv(buffer, recv_handler);
 			++queued;
@@ -245,7 +247,8 @@ auto server(const std::string& address,
             const std::string& port,
             const std::string& provider,
             size_t message_size,
-            size_t iterations) -> int
+            size_t iterations,
+            size_t queue_size) -> int
 {
   boost::asio::io_context io_context;
   
@@ -267,7 +270,7 @@ auto server(const std::string& address,
   asiofi::passive_endpoint pep(io_context, fabric);
   std::unique_ptr<asiofi::endpoint> endpoint(nullptr);
 
-  auto buffer = boost::asio::mutable_buffer(::operator new(message_size), message_size);
+  boost::container::pmr::unsynchronized_pool_resource pool_mr;
   size_t sent(0);
   size_t posted(0);
   std::atomic<size_t> queued(0);
@@ -281,6 +284,8 @@ auto server(const std::string& address,
     if (sent == 0) {
       start = std::chrono::steady_clock::now();
     }
+    assert(buffer.size() == message_size);
+    pool_mr.deallocate(buffer.data(), buffer.size());
     ++sent;
     --queued;
     if (sent == iterations) {
@@ -296,7 +301,8 @@ auto server(const std::string& address,
   };
 
   post_send_buffer = [&](const boost::system::error_code& error) {
-    while (queued <= 100 && posted <= iterations) {
+    while (queued <= queue_size && posted <= iterations) {
+      boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
       endpoint->send(buffer, send_handler);
 			++queued;
       ++posted;
@@ -334,12 +340,14 @@ auto main(int argc, char** argv) -> int
                   vm["port"].as<std::string>(),
                   vm["provider"].as<std::string>(),
                   vm["message-size"].as<size_t>(),
-                  vm["iterations"].as<size_t>());
+                  vm["iterations"].as<size_t>(),
+                  vm["queue-size"].as<size_t>());
   } else {
     return client(vm["host"].as<std::string>(),
                   vm["port"].as<std::string>(),
                   vm["provider"].as<std::string>(),
                   vm["message-size"].as<size_t>(),
-                  vm["iterations"].as<size_t>());
+                  vm["iterations"].as<size_t>(),
+                  vm["queue-size"].as<size_t>());
   }
 }

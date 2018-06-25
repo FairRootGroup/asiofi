@@ -72,10 +72,11 @@ struct hints
     m_info->addr_format = FI_SOCKADDR_IN;
     m_info->fabric_attr->prov_name = strdup("sockets");
     m_info->ep_attr->type = FI_EP_MSG;
-    m_info->domain_attr->mr_mode = FI_MR_LOCAL | FI_MR_ALLOCATED;
+    m_info->domain_attr->mr_mode = FI_MR_LOCAL | FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY;
     m_info->domain_attr->threading = FI_THREAD_SAFE;
     m_info->domain_attr->control_progress = FI_PROGRESS_AUTO;
     m_info->domain_attr->data_progress = FI_PROGRESS_AUTO;
+    m_info->domain_attr->resource_mgmt = FI_RM_ENABLED;
     m_info->tx_attr->op_flags = FI_COMPLETION;
     m_info->rx_attr->op_flags = FI_COMPLETION;
   }

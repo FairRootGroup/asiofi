@@ -144,7 +144,7 @@ struct endpoint
         }
       );
     } else {
-      throw runtime_error("Not yet implemented");
+      throw runtime_error("connect: Not yet implemented");
     }
   }
 
@@ -188,7 +188,7 @@ struct endpoint
         }
       );
     } else {
-      throw runtime_error("Not yet implemented");
+      throw runtime_error("accept: Not yet implemented");
     }
   }
 
@@ -218,8 +218,28 @@ struct endpoint
               fi_cq_data_entry entry;
               auto rc = fi_cq_sread(m_tx_cq, &entry, 1, nullptr, 100);
               if (rc == -FI_EAVAIL) {
-                // not implemented yet, see ft_eq_readerr()
-                throw runtime_error("Error pending on TX completion queue, handling not yet implemented.");
+                // struct fi_cq_err_entry {
+                // void     *op_context; /* operation context */
+                // uint64_t flags;       /* completion flags */
+                // size_t   len;         /* size of received data */
+                // void     *buf;        /* receive data buffer */
+                // uint64_t data;        /* completion data */
+                // uint64_t tag;         /* message tag */
+                // size_t   olen;        /* overflow length */
+                // int      err;         /* positive error code */
+                // int      prov_errno;  /* provider error code */
+                // void    *err_data;    /*  error data */
+                // size_t   err_data_size; /* size of err_data */
+                // };
+                fi_cq_err_entry error;
+                rc = fi_cq_readerr(m_tx_cq, &error, 0);
+                if (rc == -FI_EAGAIN) {
+                  // should not happen
+                } else if (rc < 0) {
+                  throw runtime_error("Failed reading error entry from TX completion queue, reason: ", fi_strerror(rc));
+                } else {
+                  throw runtime_error("Failed TX completion, reason: ", fi_cq_strerror(m_tx_cq, error.prov_errno, error.err_data, nullptr, 0));
+                }
               } else if (rc < 0) {
                 throw runtime_error("Failed reading from TX completion queue, reason: ", fi_strerror(rc));
               } else {
@@ -232,7 +252,43 @@ struct endpoint
         )
       );
     } else {
-      throw runtime_error("Not yet implemented");
+      // struct fi_cq_data_entry {
+      // void     *op_context; [> operation context <]
+      // uint64_t flags;       [> completion flags <]
+      // size_t   len;         [> size of received data <]
+      // void     *buf;        [> receive data buffer <]
+      // uint64_t data;        [> completion data <]
+      // };
+      fi_cq_data_entry entry;
+      auto rc = fi_cq_sread(m_tx_cq, &entry, 1, nullptr, 100);
+      if (rc == -FI_EAVAIL) {
+        // struct fi_cq_err_entry {
+        // void     *op_context; /* operation context */
+        // uint64_t flags;       /* completion flags */
+        // size_t   len;         /* size of received data */
+        // void     *buf;        /* receive data buffer */
+        // uint64_t data;        /* completion data */
+        // uint64_t tag;         /* message tag */
+        // size_t   olen;        /* overflow length */
+        // int      err;         /* positive error code */
+        // int      prov_errno;  /* provider error code */
+        // void    *err_data;    /*  error data */
+        // size_t   err_data_size; /* size of err_data */
+        // };
+        fi_cq_err_entry error;
+        rc = fi_cq_readerr(m_tx_cq, &error, 0);
+        if (rc == -FI_EAGAIN) {
+          // should not happen
+        } else if (rc < 0) {
+          throw runtime_error("Failed reading error entry from TX completion queue, reason: ", fi_strerror(rc));
+        } else {
+          throw runtime_error("Failed TX completion, reason: ", fi_cq_strerror(m_tx_cq, error.prov_errno, error.err_data, nullptr, 0));
+        }
+      } else if (rc < 0) {
+        throw runtime_error("Failed reading completion entry from TX completion queue, reason: ", fi_strerror(rc));
+      } else {
+        handler(boost::asio::mutable_buffer(entry.buf, entry.len));
+      }
     }
   }
 
@@ -276,7 +332,7 @@ struct endpoint
         )
       );
     } else {
-      throw runtime_error("Not yet implemented");
+      throw runtime_error("recv: Not yet implemented");
     }
   }
 
@@ -473,7 +529,7 @@ struct passive_endpoint
         }
       );
     } else {
-      throw runtime_error("Not yet implemented");
+      throw runtime_error("listen: Not yet implemented");
     }
   }
 
