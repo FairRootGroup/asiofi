@@ -191,7 +191,7 @@ auto client(const std::string& address,
   asiofi::endpoint endpoint(io_context, domain);
   endpoint.enable();
 
-  asiofi::allocated_pool_resource pool_mr;
+  asiofi::allocated_pool_resource pool_mr(domain);
   size_t received(0);
   size_t posted(0);
   std::atomic<size_t> queued(0);
@@ -270,7 +270,7 @@ auto server(const std::string& address,
   asiofi::passive_endpoint pep(io_context, fabric);
   std::unique_ptr<asiofi::endpoint> endpoint(nullptr);
 
-  asiofi::allocated_pool_resource pool_mr;
+  asiofi::allocated_pool_resource pool_mr(domain);
   size_t sent(0);
   size_t posted(0);
   std::atomic<size_t> queued(0);

@@ -9,11 +9,13 @@
 #ifndef ASIOFI_MEMORY_RESOURCES_HPP
 #define ASIOFI_MEMORY_RESOURCES_HPP
 
-#include <boost/container/flat_map.hpp>
+#include <asiofi/domain.hpp>
 #include <boost/container/pmr/unsynchronized_pool_resource.hpp>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <vector>
+#include <unordered_set>
 #include <utility>
 
 namespace asiofi
@@ -26,8 +28,9 @@ namespace asiofi
  */
 struct allocated_pool_resource : boost::container::pmr::unsynchronized_pool_resource
 {
-  allocated_pool_resource()
+  allocated_pool_resource(const domain& domain)
   : unsynchronized_pool_resource()
+  , m_domain(domain)
   , m_total(0)
   , m_hit(0)
   {
@@ -44,8 +47,9 @@ struct allocated_pool_resource : boost::container::pmr::unsynchronized_pool_reso
   {
     auto ptr = boost::container::pmr::unsynchronized_pool_resource::do_allocate(bytes, alignment);
 
-    if (m_allocated.insert(std::make_pair(std::make_pair(ptr, bytes), true)).second) {
+    if (m_allocated.insert(ptr).second) {
       std::memset(ptr, 0, bytes);
+      // m_memory_regions.emplace_back(m_domain, boost::asio::mutable_buffer(ptr, bytes), mr::access::send | mr::access::recv);
     } else {
       ++m_hit;
     }
@@ -65,7 +69,9 @@ struct allocated_pool_resource : boost::container::pmr::unsynchronized_pool_reso
   // }
 
   private:
-  boost::container::flat_map<std::pair<void*, size_t>, bool> m_allocated;
+  const domain& m_domain;
+  std::unordered_set<void*> m_allocated;
+  std::vector<memory_region> m_memory_regions;
   size_t m_total;
   size_t m_hit;
 }; /* struct allocated_pool_memory_resource */
