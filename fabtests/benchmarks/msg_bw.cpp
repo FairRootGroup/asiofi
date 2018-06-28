@@ -196,6 +196,9 @@ auto client(const std::string& address,
   asiofi::allocated_pool_resource pool_mr;
   size_t received(0);
   size_t posted(0);
+  const size_t warmup(queue_size * 2);
+  bool warmup_done(false);
+  bool warmup_posting_done(false);
   std::atomic<size_t> queued(0);
   std::chrono::time_point<std::chrono::steady_clock> start;
   std::chrono::time_point<std::chrono::steady_clock> stop;
@@ -204,9 +207,13 @@ auto client(const std::string& address,
   auto recv_handler = [&](asiofi::memory_region mr, boost::asio::mutable_buffer buffer) {
     assert(buffer.size() == message_size);
     pool_mr.deallocate(buffer.data(), buffer.size());
+    if (received == warmup && !warmup_done) {
+      received = 0;
+      warmup_done = true;
+    }
     ++received;
     --queued;
-    if (received == iterations) {
+    if (received == iterations && warmup_done) {
       stop = std::chrono::steady_clock::now();
       endpoint.shutdown();
       signals.cancel();
@@ -220,22 +227,26 @@ auto client(const std::string& address,
 
   std::function<void(const boost::system::error_code&)> post_recv_buffer =
     [&](const boost::system::error_code& error) {
-      while (queued < queue_size && posted < iterations) {
+      while (queued < queue_size && (posted < iterations || !warmup_posting_done)) {
+        if (posted == warmup && !warmup_posting_done) {
+          warmup_posting_done = true;
+          posted = 0;
+          start = std::chrono::steady_clock::now();
+        }
         boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
         asiofi::memory_region mr(domain, buffer, asiofi::mr::access::recv);
         endpoint.recv(buffer, mr.desc(), std::bind(std::move(recv_handler), mr, std::placeholders::_1));
-        ++queued;
         ++posted;
+        ++queued;
       }
 
-      if (posted < iterations) {
-        timer.expires_after(std::chrono::milliseconds(1));
+      if (posted < iterations || !warmup_posting_done) {
+        timer.expires_after(std::chrono::milliseconds(10));
         timer.async_wait(post_recv_buffer);
       }
     };
 
   auto connect_handler = [&]{
-    start = std::chrono::steady_clock::now();
     post_recv_buffer(boost::system::error_code());
   };
 
@@ -275,6 +286,9 @@ auto server(const std::string& address,
   asiofi::allocated_pool_resource pool_mr;
   size_t sent(0);
   size_t posted(0);
+  const size_t warmup(queue_size * 2);
+  bool warmup_done(false);
+  bool warmup_posting_done(false);
   std::atomic<size_t> queued(0);
   std::chrono::time_point<std::chrono::steady_clock> start;
   std::chrono::time_point<std::chrono::steady_clock> stop;
@@ -283,14 +297,16 @@ auto server(const std::string& address,
 
   auto send_handler = [&](asiofi::memory_region mr, boost::asio::mutable_buffer buffer) {
     // std::cout << "Finished sending buffer " << buffer.data() << " " << buffer.size() << std::endl;
-    if (sent == 0) {
+    if (sent == warmup && !warmup_done) {
       start = std::chrono::steady_clock::now();
+      warmup_done = true;
+      sent = 0;
     }
     assert(buffer.size() == message_size);
     pool_mr.deallocate(buffer.data(), buffer.size());
     ++sent;
     --queued;
-    if (sent == iterations) {
+    if (sent == iterations && warmup_done) {
       stop = std::chrono::steady_clock::now();
       endpoint->shutdown();
       signals.cancel();
@@ -304,17 +320,21 @@ auto server(const std::string& address,
 
   std::function<void(const boost::system::error_code&)> post_send_buffer =
     [&](const boost::system::error_code& error) {
-      while (queued < queue_size && posted < iterations) {
+      while (queued < queue_size && (posted < iterations || !warmup_posting_done)) {
         boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
         asiofi::memory_region mr(domain, buffer, asiofi::mr::access::send);
         // std::cout << "Posting send buffer " << buffer.data() << " " << buffer.size() << std::endl;
         endpoint->send(buffer, mr.desc(), std::bind(std::move(send_handler), mr, std::placeholders::_1));
-        ++queued;
+        if (posted == warmup && !warmup_posting_done) {
+          warmup_posting_done = true;
+          posted = 0;
+        }
         ++posted;
+        ++queued;
       } 
 
-      if (posted < iterations) {
-        timer.expires_after(std::chrono::milliseconds(1));
+      if (posted < iterations || !warmup_posting_done) {
+        timer.expires_after(std::chrono::milliseconds(10));
         timer.async_wait(post_send_buffer);
       }
     };
