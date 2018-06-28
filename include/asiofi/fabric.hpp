@@ -12,6 +12,7 @@
 #include <algorithm> // std::move
 #include <asiofi/errno.hpp>
 #include <cstdint>
+#include <iostream>
 #include <ostream>
 #include <string>
 #include <string.h> // strdup
@@ -65,10 +66,11 @@ struct hints
   friend auto get_wrapped_obj(const hints& hints) -> fi_info* { return hints.m_info; }
 
   /// (default) query ctor
-  hints() : m_info(fi_allocinfo())
+  explicit hints()
+  : m_info(fi_allocinfo())
   {
     m_info->caps = FI_MSG;
-    m_info->mode = FI_CONTEXT | FI_LOCAL_MR;
+    m_info->mode = FI_LOCAL_MR;
     m_info->addr_format = FI_SOCKADDR_IN;
     m_info->fabric_attr->prov_name = strdup("sockets");
     m_info->ep_attr->type = FI_EP_MSG;
@@ -92,7 +94,7 @@ struct hints
   }
 
   /// dtor
-  ~hints() { fi_freeinfo(m_info); }
+  ~hints() { if (m_info) fi_freeinfo(m_info); }
 
   friend auto operator<<(std::ostream& os, const hints& hints) -> std::ostream&
   {
@@ -124,7 +126,7 @@ struct info : hints
   {
     auto rc = fi_getinfo(FI_VERSION(1, 6), node, service, flags, get_wrapped_obj(hints), &m_info);
     if (rc == -61) {
-      throw runtime_error("Failed querying fi_getinfo, reason: Requested configuration cannot be satisfied (", rc, ")");
+      throw runtime_error("Failed querying fi_getinfo, reason: No supported fabric/domain found (", rc, ")");
     } else if (rc != 0)
       throw runtime_error("Failed querying fi_getinfo, reason: ", fi_strerror(rc));
   }

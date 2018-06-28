@@ -11,11 +11,13 @@
 
 #include <asiofi/errno.hpp>
 #include <asiofi/fabric.hpp>
+#include <asiofi/detail/handler_queue.hpp>
 #include <boost/asio/associated_executor.hpp>
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/io_context.hpp>
+#include <boost/asio/post.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
 #include <rdma/fi_domain.h>
 #include <iostream>
@@ -184,15 +186,21 @@ struct event_queue
         // uint8_t          data[];     [> app connection data <]
         // };
         fi_eq_cm_entry entry;
-        uint32_t event;
-        auto rc = fi_eq_sread(m_event_queue, &event, &entry, sizeof(entry), 100, 0);
+        uint32_t event_;
+        auto rc = fi_eq_sread(m_event_queue, &event_, &entry, sizeof(entry), 100, 0);
         if (rc == -FI_EAVAIL) {
           // not implemented yet, see ft_eq_readerr()
           throw runtime_error("Error pending on event queue, handling not yet implemented.");
         } else if (rc < 0) {
           throw runtime_error("Failed reading from event queue, reason: ", fi_strerror(rc));
         } else {
-          m_handler(static_cast<event_queue::event>(event), entry.fid, asiofi::info(entry.info));
+          auto event = static_cast<event_queue::event>(event_);
+
+          if (event == event_queue::event::connreq) {
+            m_handler(event, entry.fid, asiofi::info(entry.info));
+          } else {
+            m_handler(event, entry.fid, asiofi::info());
+          }
         }
       } else {
         // not implemented yet
@@ -282,11 +290,10 @@ struct completion_queue
     // shutdown = FI_SHUTDOWN
   // };
 
-  template<typename CompletionHandler = std::function<void(boost::asio::mutable_buffer)>>
   struct read_op
   {
-    explicit read_op(fid_cq* cq, CompletionHandler&& handler)
-    : m_handler(handler)
+    explicit read_op(fid_cq* cq, detail::handler_queue& queue)
+    : m_read_handler_queue(queue)
     , m_completion_queue(cq)
     {
     }
@@ -301,7 +308,19 @@ struct completion_queue
         // void     *buf;        [> receive data buffer <]
         // uint64_t data;        [> completion data <]
         // };
-        fi_cq_data_entry entry;
+ 
+        // struct fi_cq_msg_entry {
+        // void     *op_context; [> operation context <]
+        // uint64_t flags;       [> completion flags <]
+        // size_t   len;         [> size of received data <]
+        // };
+
+        // struct fi_cq_entry {
+        // void     *op_context; [> operation context <]
+        // };
+        fi_cq_entry entry;
+        // fi_cq_msg_entry entry;
+        // fi_cq_data_entry entry;
         auto rc = fi_cq_sread(m_completion_queue, &entry, 1, nullptr, 100);
         if (rc == -FI_EAVAIL) {
           // struct fi_cq_err_entry {
@@ -318,6 +337,7 @@ struct completion_queue
           // size_t   err_data_size; /* size of err_data */
           // };
           fi_cq_err_entry error;
+          error.err_data_size = 0;
           rc = fi_cq_readerr(m_completion_queue, &error, 0);
           assert(rc != -FI_EAGAIN); // should not happen
           if (rc < 0) {
@@ -328,27 +348,34 @@ struct completion_queue
                                                                                     error.err_data, nullptr, 0));
           }
         } else if (rc < 0) {
-          throw runtime_error("Failed reading from TX completion queue, reason: ", fi_strerror(rc));
+          throw runtime_error("Failed reading from completion queue, reason: ", fi_strerror(rc));
         } else {
-          m_handler(boost::asio::mutable_buffer(entry.buf, entry.len));
+          // std::cout << "CQ entry read: op_context=" << entry.op_context << std::endl;
+          // std::cout << "CQ entry read: op_context=" << entry.op_context << ", flags=" << entry.flags << ", len=" << entry.len << std::endl;
+          // std::cout << "CQ entry read: op_context=" << entry.op_context << ", flags=" << entry.flags << ", len=" << entry.len << ", buf=" << entry.buf << ", data=" << entry.data << std::endl;
+          m_read_handler_queue.front()->execute();
+          m_read_handler_queue.pop();
         }
       } else {
-        // not implemented yet
+        // TODO not implemented yet
       }
     }
 
     private:
-    CompletionHandler m_handler;
+    detail::handler_queue& m_read_handler_queue;
     fid_cq* m_completion_queue;
   };
 
   template<typename CompletionHandler>
   auto read(CompletionHandler&& handler) -> void
   {
+    auto ex = boost::asio::get_associated_executor(handler, m_io_context);
+    auto read_handler = boost::asio::bind_executor(ex, read_op(m_completion_queue.get(), m_read_handler_queue));
+    // TODO preallocate
+    m_read_handler_queue.push(detail::handler_queue::value_type(new detail::queued_handler<CompletionHandler>(std::move(handler))));
+
     auto wait_obj = &m_completion_queue.get()->fid;
     auto rc = fi_trywait(get_wrapped_obj(m_domain.get_fabric()), &wait_obj, 1);
-    auto ex = boost::asio::get_associated_executor(handler, m_io_context);
-    auto read_handler = boost::asio::bind_executor(ex, read_op<>(m_completion_queue.get(), std::move(handler)));
     if (rc == FI_SUCCESS) {
       m_cq_fd.async_wait(boost::asio::posix::stream_descriptor::wait_read, std::move(read_handler));
     } else {
@@ -364,6 +391,7 @@ struct completion_queue
   std::unique_ptr<fid_cq, fid_cq_deleter> m_completion_queue;
   boost::asio::io_context& m_io_context;
   boost::asio::posix::stream_descriptor m_cq_fd;
+  asiofi::detail::handler_queue m_read_handler_queue;
 
   static auto create_completion_queue(direction dir, const info& info, const domain& domain, fi_context& context)
   -> std::unique_ptr<fid_cq, fid_cq_deleter>
@@ -372,7 +400,9 @@ struct completion_queue
     fi_cq_attr cq_attr = {
       0,                 // size_t               size;      [> # entries for CQ <]
       0,                 // uint64_t             flags;     [> operation flags <]
-      FI_CQ_FORMAT_DATA, // enum fi_cq_format    format;    [> completion format <]
+      FI_CQ_FORMAT_CONTEXT,  // enum fi_cq_format    format;    [> completion format <]
+      // FI_CQ_FORMAT_MSG,   // enum fi_cq_format    format;    [> completion format <]
+      // FI_CQ_FORMAT_DATA,  // enum fi_cq_format    format;    [> completion format <]
       FI_WAIT_FD,        // enum fi_wait_obj     wait_obj;  [> requested wait object <]
       0,                 // int                  signaling_vector; [> interrupt affinity <]
       FI_CQ_COND_NONE,   // enum fi_cq_wait_cond wait_cond; [> wait condition format <]
@@ -421,35 +451,44 @@ struct memory_region
   }
 
   explicit memory_region(const domain& domain, boost::asio::mutable_buffer buffer, access access)
-  : m_memory_region(create_memory_region(domain, buffer, access, m_context))
+  : m_memory_region(std::move(create_memory_region(domain, buffer, access, m_context.get())))
   {
-    // std::cout << "registered buffer " << buffer.data() << std::endl;
+    // std::cout << "registered memory region: local_desc=" << desc() << " buf=" << buffer.data() << " size=" << buffer.size() << " access=0x" << std::hex << static_cast<uint64_t>(access) << std::dec << std::endl;
   }
 
-  memory_region(const memory_region&) = delete;
+  memory_region(const memory_region&) = default;
 
   memory_region(memory_region&&) = default;
 
-  ~memory_region()
+  auto desc() -> void*
   {
-      // std::cout << "UNregistered buffer" << std::endl;
+    return fi_mr_desc(m_memory_region.get());
   }
+
+  // ~memory_region()
+  // {
+    // if (m_memory_region.get() && (m_memory_region.use_count() == 1))
+      // std::cout << "unregistering memory region: local_desc=" << desc() << " fid_mr*=" << m_memory_region.get() << std::endl;
+  // }
 
   private:
   using fid_mr_deleter = std::function<void(fid_mr*)>;
 
-  fi_context m_context;
-  std::unique_ptr<fid_mr, fid_mr_deleter> m_memory_region;
+  std::shared_ptr<fi_context> m_context;
+  std::shared_ptr<fid_mr> m_memory_region;
 
-  static auto create_memory_region(const domain& domain, boost::asio::mutable_buffer buffer, access access, fi_context& context)
+  static auto create_memory_region(const domain& domain, boost::asio::mutable_buffer buffer, access access, fi_context* context)
   -> std::unique_ptr<fid_mr, fid_mr_deleter>
   {
     fid_mr* mr;
-    auto rc = fi_mr_reg(get_wrapped_obj(domain), buffer.data(), buffer.size(), static_cast<uint64_t>(access), 0, 0, 0, &mr, &context);
+    auto rc = fi_mr_reg(get_wrapped_obj(domain), buffer.data(), buffer.size(), static_cast<uint64_t>(access), 0, 0, 0, &mr, context);
     if (rc != 0)
       throw runtime_error("Failed registering ofi memory region, reason: ", fi_strerror(rc));
 
-    return {mr, [](fid_mr* mr){ fi_close(&mr->fid); }};
+    return {mr, [](fid_mr* mr){
+      fi_close(&mr->fid);
+      // std::cout << "fi_close: fid_mr*=" << mr << std::endl;
+    }};
   }
 }; /* struct memory_region */
 
