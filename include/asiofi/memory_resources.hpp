@@ -29,16 +29,14 @@ struct allocated_pool_resource : boost::container::pmr::unsynchronized_pool_reso
 {
   allocated_pool_resource()
   : unsynchronized_pool_resource()
-  , m_total(0)
-  , m_hit(0)
   {
   }
 
-  ~allocated_pool_resource() override
-  {
-    double fast_alloc_rate = (m_hit * 100.) / (m_total * 1.);
-    std::cout << std::fixed << std::setprecision(2) << fast_alloc_rate << "% reused allocations of " << m_total << " total allocations" << std::endl;
-  }
+  // ~allocated_pool_resource() override
+  // {
+    // double fast_alloc_rate = (m_hit * 100.) / (m_total * 1.);
+    // std::cout << std::fixed << std::setprecision(2) << fast_alloc_rate << "% reused allocations of " << m_total << " total allocations" << std::endl;
+  // }
 
   protected:
   auto do_allocate(std::size_t bytes, std::size_t alignment) -> void* override
@@ -49,11 +47,9 @@ struct allocated_pool_resource : boost::container::pmr::unsynchronized_pool_reso
       std::memset(ptr, 0, bytes);
       // std::cout << "allocated: ptr=" << ptr << ", size=" << bytes << std::endl;
     } else {
-      ++m_hit;
       // std::cout << "allocated (fast): ptr=" << ptr << ", size=" << bytes << std::endl;
     }
 
-    ++m_total;
     return ptr;
   }
 
@@ -71,8 +67,6 @@ struct allocated_pool_resource : boost::container::pmr::unsynchronized_pool_reso
 
   private:
   std::unordered_set<void*> m_allocated;
-  size_t m_total;
-  size_t m_hit;
 }; /* struct allocated_pool_memory_resource */
 
 } /* namespace asiofi */

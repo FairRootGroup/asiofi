@@ -20,15 +20,28 @@ namespace detail
 struct queued_handler_base
 {
   virtual ~queued_handler_base() { }
-  virtual void execute() = 0;
+  virtual auto execute() -> void = 0;
+  virtual auto release_context() -> std::unique_ptr<fi_context> = 0;
+  virtual auto context() -> fi_context* = 0;
 };
 
 template<typename Handler>
 struct queued_handler : queued_handler_base
 {
-  queued_handler(Handler handler)
+  queued_handler(Handler handler, std::unique_ptr<fi_context> ctx)
   : m_handler(std::move(handler))
+  , m_context(std::move(ctx))
   {
+  }
+
+  auto release_context() -> std::unique_ptr<fi_context> override
+  {
+    return std::move(m_context);
+  }
+
+  auto context() -> fi_context* override
+  {
+    return m_context.get();
   }
 
   auto execute() -> void override
@@ -38,6 +51,7 @@ struct queued_handler : queued_handler_base
 
   private:
   Handler m_handler;
+  std::unique_ptr<fi_context> m_context;
 };
 
 using handler_queue = std::queue<std::unique_ptr<queued_handler_base>>;

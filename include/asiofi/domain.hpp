@@ -15,8 +15,10 @@
 #include <boost/asio/associated_executor.hpp>
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/buffer.hpp>
+#include <boost/asio/defer.hpp>
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/io_context.hpp>
+#include <boost/asio/io_context_strand.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
 #include <rdma/fi_domain.h>
@@ -266,16 +268,24 @@ using eq = event_queue;
 struct completion_queue
 {
   /// get wrapped C object
-  friend auto get_wrapped_obj(const completion_queue& cq) -> fid_cq* { return cq.m_completion_queue.get(); }
+  friend auto get_wrapped_obj(const completion_queue& cq) -> fid_cq*
+  {
+    return cq.m_completion_queue.get();
+  }
 
   enum class direction { rx, tx };
 
-  explicit completion_queue(boost::asio::io_context& io_context, direction dir, const domain& domain)
+  explicit completion_queue(boost::asio::io_context::strand& strand,
+                            direction dir,
+                            const domain& domain)
   : m_domain(domain)
-  , m_completion_queue(create_completion_queue(dir, domain.get_info(), domain, m_context))
-  , m_io_context(io_context)
-  , m_cq_fd(io_context, detail::get_native_wait_fd(&m_completion_queue->fid))
+  , m_completion_queue(create_completion_queue(
+    dir, domain.get_info(), domain, m_context))
+  , m_strand(strand)
+  , m_cq_fd(strand.context(),
+    detail::get_native_wait_fd(&m_completion_queue->fid))
   {
+    post_reader(); // Start reading CQ events
   }
 
   completion_queue() = delete;
@@ -290,97 +300,14 @@ struct completion_queue
     // shutdown = FI_SHUTDOWN
   // };
 
-  struct read_op
-  {
-    explicit read_op(fid_cq* cq, detail::handler_queue& queue)
-    : m_read_handler_queue(queue)
-    , m_completion_queue(cq)
-    {
-    }
-
-    auto operator()(const boost::system::error_code& error = boost::system::error_code()) -> void
-    {
-      if (!error) {
-        // struct fi_cq_data_entry {
-        // void     *op_context; [> operation context <]
-        // uint64_t flags;       [> completion flags <]
-        // size_t   len;         [> size of received data <]
-        // void     *buf;        [> receive data buffer <]
-        // uint64_t data;        [> completion data <]
-        // };
- 
-        // struct fi_cq_msg_entry {
-        // void     *op_context; [> operation context <]
-        // uint64_t flags;       [> completion flags <]
-        // size_t   len;         [> size of received data <]
-        // };
-
-        // struct fi_cq_entry {
-        // void     *op_context; [> operation context <]
-        // };
-        fi_cq_entry entry;
-        // fi_cq_msg_entry entry;
-        // fi_cq_data_entry entry;
-        auto rc = fi_cq_sread(m_completion_queue, &entry, 1, nullptr, 100);
-        if (rc == -FI_EAVAIL) {
-          // struct fi_cq_err_entry {
-          // void     *op_context; /* operation context */
-          // uint64_t flags;       /* completion flags */
-          // size_t   len;         /* size of received data */
-          // void     *buf;        /* receive data buffer */
-          // uint64_t data;        /* completion data */
-          // uint64_t tag;         /* message tag */
-          // size_t   olen;        /* overflow length */
-          // int      err;         /* positive error code */
-          // int      prov_errno;  /* provider error code */
-          // void    *err_data;    /*  error data */
-          // size_t   err_data_size; /* size of err_data */
-          // };
-          fi_cq_err_entry error;
-          error.err_data_size = 0;
-          rc = fi_cq_readerr(m_completion_queue, &error, 0);
-          assert(rc != -FI_EAGAIN); // should not happen
-          if (rc < 0) {
-            throw runtime_error("Failed reading error entry from completion queue, reason: ", fi_strerror(rc));
-          } else {
-            throw runtime_error("Failed completion event, reason: ", fi_cq_strerror(m_completion_queue,
-                                                                                    error.prov_errno,
-                                                                                    error.err_data, nullptr, 0));
-          }
-        } else if (rc < 0) {
-          throw runtime_error("Failed reading from completion queue, reason: ", fi_strerror(rc));
-        } else {
-          // std::cout << "CQ entry read: op_context=" << entry.op_context << std::endl;
-          // std::cout << "CQ entry read: op_context=" << entry.op_context << ", flags=" << entry.flags << ", len=" << entry.len << std::endl;
-          // std::cout << "CQ entry read: op_context=" << entry.op_context << ", flags=" << entry.flags << ", len=" << entry.len << ", buf=" << entry.buf << ", data=" << entry.data << std::endl;
-          m_read_handler_queue.front()->execute();
-          m_read_handler_queue.pop();
-        }
-      } else {
-        // TODO not implemented yet
-      }
-    }
-
-    private:
-    detail::handler_queue& m_read_handler_queue;
-    fid_cq* m_completion_queue;
-  };
-
   template<typename CompletionHandler>
-  auto read(CompletionHandler&& handler) -> void
+  auto read(CompletionHandler&& handler,
+            std::unique_ptr<fi_context> ctx) -> void
   {
-    auto ex = boost::asio::get_associated_executor(handler, m_io_context);
-    auto read_handler = boost::asio::bind_executor(ex, read_op(m_completion_queue.get(), m_read_handler_queue));
-    // TODO preallocate
-    m_read_handler_queue.push(detail::handler_queue::value_type(new detail::queued_handler<CompletionHandler>(std::move(handler))));
-
-    auto wait_obj = &m_completion_queue.get()->fid;
-    auto rc = fi_trywait(get_wrapped_obj(m_domain.get_fabric()), &wait_obj, 1);
-    if (rc == FI_SUCCESS) {
-      m_cq_fd.async_wait(boost::asio::posix::stream_descriptor::wait_read, std::move(read_handler));
-    } else {
-      boost::asio::dispatch(ex, std::move(read_handler));
-    }
+    m_read_handler_queue.push(detail::handler_queue::value_type(
+      new detail::queued_handler<CompletionHandler>(
+        std::forward<CompletionHandler>(handler),
+        std::move(ctx))));
   }
 
   private:
@@ -389,9 +316,93 @@ struct completion_queue
   fi_context m_context;
   const domain& m_domain;
   std::unique_ptr<fid_cq, fid_cq_deleter> m_completion_queue;
-  boost::asio::io_context& m_io_context;
+  boost::asio::io_context::strand& m_strand;
   boost::asio::posix::stream_descriptor m_cq_fd;
   asiofi::detail::handler_queue m_read_handler_queue;
+
+  auto post_reader() -> void
+  {
+    auto wait_obj = &m_completion_queue.get()->fid;
+    auto rc = fi_trywait(get_wrapped_obj(m_domain.get_fabric()), &wait_obj, 1);
+    if (rc == FI_SUCCESS) {
+      // std::cout << "wait on fd" << std::endl;
+      m_cq_fd.async_wait(boost::asio::posix::stream_descriptor::wait_read, std::move(
+        boost::asio::bind_executor(m_strand,
+          std::bind(&completion_queue::reader, this, std::placeholders::_1, true))));
+      // call trywait again to make sure, we do not miss the notification
+      // reader(boost::system::error_code(), false);
+      // rc = fi_trywait(get_wrapped_obj(m_domain.get_fabric()), &wait_obj, 1);
+      // assert(rc == FI_SUCCESS);
+    } else {
+      // std::cout << "call" << std::endl;
+      // reader(boost::system::error_code());
+      // std::cout << "post" << std::endl;
+      boost::asio::post(m_strand, std::move(
+        boost::asio::bind_executor(m_strand,
+          std::bind(&completion_queue::reader, this, boost::system::error_code(), true))));
+    }
+  }
+
+  auto reader_handle_error() -> void
+  {
+    // struct fi_cq_err_entry {
+    // void     *op_context; /* operation context */
+    // uint64_t flags;       /* completion flags */
+    // size_t   len;         /* size of received data */
+    // void     *buf;        /* receive data buffer */
+    // uint64_t data;        /* completion data */
+    // uint64_t tag;         /* message tag */
+    // size_t   olen;        /* overflow length */
+    // int      err;         /* positive error code */
+    // int      prov_errno;  /* provider error code */
+    // void    *err_data;    /*  error data */
+    // size_t   err_data_size; /* size of err_data */
+    // };
+    fi_cq_err_entry error;
+    error.err_data_size = 0;
+    auto rc = fi_cq_readerr(m_completion_queue.get(), &error, 0);
+    assert(rc != -FI_EAGAIN); // should not happen
+    if (rc < 0) {
+      throw runtime_error("Failed reading error entry from completion queue, reason: ", fi_strerror(rc));
+    } else {
+      throw runtime_error("Failed completion event, reason: ", fi_cq_strerror(m_completion_queue.get(),
+                                                                              error.prov_errno,
+                                                                              error.err_data, nullptr, 0));
+    }
+  }
+
+  auto reader(const boost::system::error_code& error, bool continuation = true) -> void
+  {
+    if (!error) {
+      // struct fi_cq_entry {
+      // void     *op_context; [> operation context <]
+      // };
+      fi_cq_entry entry[64];
+      ssize_t rc;
+      while ((rc = fi_cq_read(m_completion_queue.get(), &entry, 64)) != -FI_EAGAIN) {
+        if (rc == -FI_EAVAIL) {
+          reader_handle_error();
+        } else if (rc < 0) {
+          throw runtime_error("Failed reading from completion queue, reason: ", fi_strerror(rc));
+        } else {
+          for (ssize_t i = 0; i < rc; ++i) {
+            // std::cout << "CQ entry read: op_context=" << entry.op_context << std::endl;
+            if (m_read_handler_queue.empty()) {
+              throw runtime_error("Received CQ event, but no completion handler is queued");
+            }
+            assert(m_read_handler_queue.front()->context() == entry[i].op_context);
+            m_read_handler_queue.front()->execute();
+            m_read_handler_queue.pop();
+          }
+        }
+      }
+      if (continuation) {
+        post_reader();
+      }
+    } else {
+      // TODO is there anything to do here? We might end up here, when the asio event loop is stopped.
+    }
+  }
 
   static auto create_completion_queue(direction dir, const info& info, const domain& domain, fi_context& context)
   -> std::unique_ptr<fid_cq, fid_cq_deleter>

@@ -8,12 +8,11 @@
 
 // #define BOOST_ASIO_ENABLE_HANDLER_TRACKING
 #include <asiofi.hpp>
-#include <atomic>
 #include <boost/asio/buffer.hpp>
+#include <boost/asio/defer.hpp>
 #include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
-#include <boost/asio/steady_timer.hpp>
 #include <boost/container/pmr/unsynchronized_pool_resource.hpp>
 #include <boost/program_options.hpp>
 #include <benchmark/benchmark.h>
@@ -196,24 +195,23 @@ auto client(const std::string& address,
   asiofi::allocated_pool_resource pool_mr;
   size_t received(0);
   size_t posted(0);
-  const size_t warmup(queue_size * 2);
-  bool warmup_done(false);
-  bool warmup_posting_done(false);
-  std::atomic<size_t> queued(0);
+  size_t queued(0);
   std::chrono::time_point<std::chrono::steady_clock> start;
   std::chrono::time_point<std::chrono::steady_clock> stop;
-  boost::asio::steady_timer timer(io_context);
 
-  auto recv_handler = [&](asiofi::memory_region mr, boost::asio::mutable_buffer buffer) {
-    assert(buffer.size() == message_size);
-    pool_mr.deallocate(buffer.data(), buffer.size());
-    if (received == warmup && !warmup_done) {
-      received = 0;
-      warmup_done = true;
-    }
+  boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
+  asiofi::memory_region mr(domain, buffer, asiofi::mr::access::recv);
+
+  std::function<void()> post_recv_buffers;
+
+  auto recv_completion_handler = [&](boost::asio::mutable_buffer buffer) {
     ++received;
     --queued;
-    if (received == iterations && warmup_done) {
+
+    if (posted < iterations) {
+      boost::asio::post(io_context, post_recv_buffers);
+    }
+    if (received == iterations) {
       stop = std::chrono::steady_clock::now();
       endpoint.shutdown();
       signals.cancel();
@@ -225,29 +223,19 @@ auto client(const std::string& address,
     }
   };
 
-  std::function<void(const boost::system::error_code&)> post_recv_buffer =
-    [&](const boost::system::error_code& error) {
-      while (queued < queue_size && (posted < iterations || !warmup_posting_done)) {
-        if (posted == warmup && !warmup_posting_done) {
-          warmup_posting_done = true;
-          posted = 0;
-          start = std::chrono::steady_clock::now();
-        }
-        boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
-        asiofi::memory_region mr(domain, buffer, asiofi::mr::access::recv);
-        endpoint.recv(buffer, mr.desc(), std::bind(std::move(recv_handler), mr, std::placeholders::_1));
-        ++posted;
-        ++queued;
+  post_recv_buffers = [&]() {
+    while (queued < queue_size && posted < iterations) {
+      if (posted == 0) {
+        start = std::chrono::steady_clock::now();
       }
-
-      if (posted < iterations || !warmup_posting_done) {
-        timer.expires_after(std::chrono::milliseconds(10));
-        timer.async_wait(post_recv_buffer);
-      }
-    };
+      endpoint.recv(buffer, mr.desc(), recv_completion_handler);
+      ++posted;
+      ++queued;
+    }
+  };
 
   auto connect_handler = [&]{
-    post_recv_buffer(boost::system::error_code());
+    post_recv_buffers();
   };
 
   endpoint.connect(connect_handler);
@@ -286,27 +274,30 @@ auto server(const std::string& address,
   asiofi::allocated_pool_resource pool_mr;
   size_t sent(0);
   size_t posted(0);
-  const size_t warmup(queue_size * 2);
-  bool warmup_done(false);
-  bool warmup_posting_done(false);
-  std::atomic<size_t> queued(0);
+  size_t queued(0);
   std::chrono::time_point<std::chrono::steady_clock> start;
   std::chrono::time_point<std::chrono::steady_clock> stop;
-  boost::asio::steady_timer timer(io_context);
-  std::vector<asiofi::memory_region> regions;
 
-  auto send_handler = [&](asiofi::memory_region mr, boost::asio::mutable_buffer buffer) {
-    // std::cout << "Finished sending buffer " << buffer.data() << " " << buffer.size() << std::endl;
-    if (sent == warmup && !warmup_done) {
+  boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
+  asiofi::memory_region mr(domain, buffer, asiofi::mr::access::send);
+
+  std::function<void()> post_send_buffers;
+
+  auto send_completion_handler = [&](boost::asio::mutable_buffer buffer) {
+    // std::cout << "posted=" << posted << " sent=" << sent << " queued=" << queued << std::endl;
+    // std::cout << "enter send completion: buf=" << buffer.data() << " size=" << buffer.size() << std::endl;
+    if (sent == 0) {
       start = std::chrono::steady_clock::now();
-      warmup_done = true;
       sent = 0;
     }
     assert(buffer.size() == message_size);
-    pool_mr.deallocate(buffer.data(), buffer.size());
     ++sent;
     --queued;
-    if (sent == iterations && warmup_done) {
+    if (posted < iterations) {
+      boost::asio::post(io_context, post_send_buffers);
+    }
+    // std::cout << "exit send completion" << std::endl;
+    if (sent == iterations) {
       stop = std::chrono::steady_clock::now();
       endpoint->shutdown();
       signals.cancel();
@@ -318,29 +309,19 @@ auto server(const std::string& address,
     }
   };
 
-  std::function<void(const boost::system::error_code&)> post_send_buffer =
-    [&](const boost::system::error_code& error) {
-      while (queued < queue_size && (posted < iterations || !warmup_posting_done)) {
-        boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
-        asiofi::memory_region mr(domain, buffer, asiofi::mr::access::send);
-        // std::cout << "Posting send buffer " << buffer.data() << " " << buffer.size() << std::endl;
-        endpoint->send(buffer, mr.desc(), std::bind(std::move(send_handler), mr, std::placeholders::_1));
-        if (posted == warmup && !warmup_posting_done) {
-          warmup_posting_done = true;
-          posted = 0;
-        }
-        ++posted;
-        ++queued;
-      } 
-
-      if (posted < iterations || !warmup_posting_done) {
-        timer.expires_after(std::chrono::milliseconds(10));
-        timer.async_wait(post_send_buffer);
-      }
-    };
+  post_send_buffers = [&]() {
+    // std::cout << "enter post_send_buffers" << std::endl;
+    // size_t at_start = queued;
+    while (queued < queue_size && posted < iterations) {
+      endpoint->send(buffer, mr.desc(), send_completion_handler);
+      ++posted;
+      ++queued;
+    } 
+    // std::cout << "exit post_send_buffers: posted " << (queued - at_start) << " new buffers, posted=" << posted << std::endl;
+  };
 
   auto accept_handler = [&]() {
-    post_send_buffer(boost::system::error_code());
+    post_send_buffers();
   };
 
   auto listen_handler = [&](fid_t handle, asiofi::info&& info) {

@@ -38,11 +38,11 @@ struct endpoint
   : m_io_context(io_context)
   , m_domain(domain)
   , m_eq(m_io_context, domain.get_fabric())
-  , m_rx_cq(m_io_context, cq::direction::rx, domain)
-  , m_tx_cq(m_io_context, cq::direction::tx, domain)
-  , m_endpoint(create_endpoint(domain, info, m_context))
   , m_rx_strand(m_io_context)
   , m_tx_strand(m_io_context)
+  , m_rx_cq(m_rx_strand, cq::direction::rx, domain)
+  , m_tx_cq(m_tx_strand, cq::direction::tx, domain)
+  , m_endpoint(create_endpoint(domain, info, m_context))
   {
     bind(m_eq);
     bind(m_rx_cq, endpoint::cq_flag::recv);
@@ -124,39 +124,67 @@ struct endpoint
   }
 
   template<typename CompletionHandler>
-  auto send(boost::asio::mutable_buffer buffer, void* mr_desc, CompletionHandler&& handler) -> void
+  auto send(boost::asio::mutable_buffer buffer,
+            void* mr_desc,
+            CompletionHandler&& handler) -> void
   {
     fi_addr_t dummy_addr;
-    auto ctx = std::make_shared<fi_context>();
-    // std::cout << "fi_send: buf=" << buffer.data() << ", len=" << buffer.size() << ", desc=" << mr_desc << ", ctx=" << ctx.get() << std::endl;
-    auto rc = fi_send(m_endpoint.get(), buffer.data(), buffer.size(), mr_desc, dummy_addr, ctx.get());
-    if (rc != FI_SUCCESS)
-      throw runtime_error("Failed posting a TX buffer on ofi endpoint, reason: ", fi_strerror(rc));
+    auto ctx = std::unique_ptr<fi_context>(
+      new fi_context{nullptr, nullptr, nullptr, nullptr});
 
-    m_tx_cq.read(boost::asio::bind_executor(m_tx_strand, std::bind(std::forward<CompletionHandler>(handler), buffer, ctx)));
+    // std::cout << "fi_send: buf=" << buffer.data()
+    //                  << ", len=" << buffer.size()
+    //                  << ", desc=" << mr_desc
+    //                  << ", ctx=" << ctx.get() << std::endl;
+    auto rc = fi_send(m_endpoint.get(), buffer.data(), buffer.size(),
+      mr_desc, dummy_addr, ctx.get());
+    if (rc != FI_SUCCESS) {
+      throw runtime_error("Failed posting a TX buffer on ofi endpoint, reason: ",
+        fi_strerror(rc));
+    }
+
+    m_tx_cq.read(
+      boost::asio::bind_executor(m_tx_strand,
+        std::bind(std::forward<CompletionHandler>(handler), buffer)),
+      std::move(ctx));
   }
 
   template<typename CompletionHandler>
-  auto send(boost::asio::mutable_buffer buffer, CompletionHandler&& handler) -> void
+  auto send(boost::asio::mutable_buffer buffer,
+            CompletionHandler&& handler) -> void
   {
     send(std::move(buffer), nullptr, std::forward<CompletionHandler>(handler));
   }
 
   template<typename CompletionHandler>
-  auto recv(boost::asio::mutable_buffer buffer, void* mr_desc, CompletionHandler&& handler) -> void
+  auto recv(boost::asio::mutable_buffer buffer,
+            void* mr_desc,
+            CompletionHandler&& handler) -> void
   {
     fi_addr_t dummy_addr;
-    auto ctx = std::make_shared<fi_context>();
-    // std::cout << "fi_recv: buf=" << buffer.data() << ", len=" << buffer.size() << ", desc=" << mr_desc << ", ctx=" << ctx.get() << std::endl;
-    auto rc = fi_recv(m_endpoint.get(), buffer.data(), buffer.size(), mr_desc, dummy_addr, ctx.get());
-    if (rc != FI_SUCCESS)
-      throw runtime_error("Failed posting a RX buffer on ofi endpoint, reason: ", fi_strerror(rc));
+    auto ctx = std::unique_ptr<fi_context>(
+      new fi_context{nullptr, nullptr, nullptr, nullptr});
+    
+    // std::cout << "fi_recv: buf=" << buffer.data()
+    //                  << ", len=" << buffer.size()
+    //                  << ", desc=" << mr_desc
+    //                  << ", ctx=" << ctx.get() << std::endl;
+    auto rc = fi_recv(m_endpoint.get(), buffer.data(), buffer.size(),
+      mr_desc, dummy_addr, ctx.get());
+    if (rc != FI_SUCCESS) {
+      throw runtime_error("Failed posting a RX buffer on ofi endpoint, reason: ",
+        fi_strerror(rc));
+    }
 
-    m_rx_cq.read(boost::asio::bind_executor(m_rx_strand, std::bind(std::forward<CompletionHandler>(handler), buffer, ctx)));
+    m_rx_cq.read(
+      boost::asio::bind_executor(m_rx_strand,
+        std::bind(std::forward<CompletionHandler>(handler), buffer)),
+      std::move(ctx));
   }
 
   template<typename CompletionHandler>
-  auto recv(boost::asio::mutable_buffer buffer, CompletionHandler&& handler) -> void
+  auto recv(boost::asio::mutable_buffer buffer,
+            CompletionHandler&& handler) -> void
   {
     recv(std::move(buffer), nullptr, std::forward<CompletionHandler>(handler));
   }
@@ -164,8 +192,10 @@ struct endpoint
   auto shutdown() -> void
   {
     auto rc = fi_shutdown(m_endpoint.get(), 0);
-    if (rc != FI_SUCCESS)
-      throw runtime_error("Failed shutting down ofi endpoint, reason: ", fi_strerror(rc));
+    if (rc != FI_SUCCESS) {
+      throw runtime_error("Failed shutting down ofi endpoint, reason: ",
+        fi_strerror(rc));
+    }
   }
 
   private:
@@ -175,19 +205,24 @@ struct endpoint
   boost::asio::io_context& m_io_context;
   const domain& m_domain;
   event_queue m_eq;
+  boost::asio::io_context::strand m_rx_strand, m_tx_strand;
   completion_queue m_rx_cq, m_tx_cq;
   std::unique_ptr<fid_ep, fid_ep_deleter> m_endpoint;
-  boost::asio::io_context::strand m_rx_strand, m_tx_strand;
 
-  static auto create_endpoint(const domain& domain, const info& info, fi_context& context) -> std::unique_ptr<fid_ep, fid_ep_deleter>
+  static auto create_endpoint(const domain& domain,
+                              const info& info,
+                              fi_context& context)
+  -> std::unique_ptr<fid_ep, fid_ep_deleter>
   {
     fid_ep* ep;
     auto rc = fi_endpoint(get_wrapped_obj(domain),
                           get_wrapped_obj(info),
                           &ep,
                           &context);
-    if (rc != 0)
-      throw runtime_error("Failed creating ofi endpoint, reason: ", fi_strerror(rc));
+    if (rc != 0) {
+      throw runtime_error("Failed creating ofi endpoint, reason: ",
+        fi_strerror(rc));
+    }
 
     return {ep, [](fid_ep* ep){ fi_close(&ep->fid); }};
   }
