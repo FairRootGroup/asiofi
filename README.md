@@ -24,7 +24,7 @@ Fabtests (Optional, enable with `-DBUILD_FABTESTS=ON`):
 ## Quickstart
 
 ```bash
-git clone https://github.com/dennisklein/asiofi
+git clone https://github.com/FairRootGroup/asiofi
 mkdir asiofi_build && cd asiofi_build
 cmake -DCMAKE_INSTALL_PREFIX=./asiofi_install ../asiofi
 cmake --build . --target install
