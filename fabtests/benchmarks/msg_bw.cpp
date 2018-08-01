@@ -9,11 +9,9 @@
 // #define BOOST_ASIO_ENABLE_HANDLER_TRACKING
 #include <asiofi.hpp>
 #include <boost/asio/buffer.hpp>
-#include <boost/asio/defer.hpp>
 #include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
-#include <boost/container/pmr/unsynchronized_pool_resource.hpp>
 #include <boost/program_options.hpp>
 #include <benchmark/benchmark.h>
 #include <chrono>
@@ -189,7 +187,7 @@ auto client(const std::string& address,
   // std::cout << info << std::endl;
   asiofi::fabric fabric(info);
   asiofi::domain domain(fabric);
-  asiofi::endpoint endpoint(io_context, domain);
+  asiofi::connected_endpoint endpoint(io_context, domain);
   endpoint.enable();
 
   asiofi::allocated_pool_resource pool_mr;
@@ -269,7 +267,7 @@ auto server(const std::string& address,
   asiofi::fabric fabric(info);
   asiofi::domain domain(fabric);
   asiofi::passive_endpoint pep(io_context, fabric);
-  std::unique_ptr<asiofi::endpoint> endpoint(nullptr);
+  std::unique_ptr<asiofi::connected_endpoint> endpoint(nullptr);
 
   asiofi::allocated_pool_resource pool_mr;
   size_t sent(0);
@@ -325,7 +323,7 @@ auto server(const std::string& address,
   };
 
   auto listen_handler = [&](fid_t handle, asiofi::info&& info) {
-    endpoint = make_unique<asiofi::endpoint>(io_context, domain, info);
+    endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain, info);
     endpoint->enable();
     endpoint->accept(accept_handler);
   };

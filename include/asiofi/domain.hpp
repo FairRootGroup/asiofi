@@ -11,6 +11,7 @@
 
 #include <asiofi/errno.hpp>
 #include <asiofi/fabric.hpp>
+#include <asiofi/detail/get_native_wait_fd.hpp>
 #include <asiofi/detail/handler_queue.hpp>
 #include <boost/asio/associated_executor.hpp>
 #include <boost/asio/bind_executor.hpp>
@@ -26,239 +27,60 @@
 
 namespace asiofi
 {
-
-/**
- * @struct domain domain.hpp <asiofi/domain.hpp>
- * @brief Wraps fid_domain
- */
-struct domain
-{
-  /// get wrapped C object
-  friend auto get_wrapped_obj(const domain& domain) -> fid_domain* { return domain.m_domain; }
-
-  /// ctor #1
-  explicit domain(const fabric& fabric)
-  : m_fabric(fabric)
+  /**
+   * @struct domain domain.hpp <asiofi/domain.hpp>
+   * @brief Wraps fid_domain
+   */
+  struct domain
   {
-    auto rc = fi_domain(get_wrapped_obj(fabric),
-                        get_wrapped_obj(fabric.get_info()),
-                        &m_domain,
-                        &m_context);
-    if (rc != 0)
-      throw runtime_error("Failed opening ofi domain, reason: ", fi_strerror(rc));
-  }
-
-  /// (default) ctor
-  explicit domain() = delete;
-
-  /// copy ctor
-  domain(const domain&) = delete;
-
-  /// move ctor
-  domain(domain&& rhs)
-  : m_fabric(std::move(rhs.m_fabric))
-  , m_context(std::move(rhs.m_context))
-  , m_domain(std::move(rhs.m_domain))
-  {
-    rhs.m_domain = nullptr;
-  }
-
-  /// dtor
-  ~domain() { fi_close(&m_domain->fid); }
-
-  /// get associated fabric object
-  auto get_fabric() const -> const fabric& { return m_fabric; }
-
-  /// get associated info object
-  auto get_info() const -> const info& { return m_fabric.get_info(); }
-
-  private:
-  const fabric& m_fabric;
-  fi_context m_context;
-  fid_domain* m_domain;
-}; /* struct domain */
-
-/**
- * @struct address_vector domain.hpp <asiofi/domain.hpp>
- * @brief Wraps fid_av
- */
-struct address_vector
-{
-  /// ctor #1
-  explicit address_vector(const domain& domain)
-  {
-    fi_av_attr av_attr = {
-      get_wrapped_obj(domain.get_info())->domain_attr->av_type, // enum fi_av_type  type;        [> type of AV <]
-      0,                                             // int              rx_ctx_bits; [> address bits to identify rx ctx <]
-      1000,                                          // size_t           count;       [> # entries for AV <]
-      0,                                             // size_t           ep_per_node; [> # endpoints per fabric address <]
-      nullptr,                                       // const char       *name;       [> system name of AV <]
-      nullptr,                                       // void             *map_addr;   [> base mmap address <]
-      0                                              // uint64_t         flags;       [> operation flags <]
-    };
-    auto rc = fi_av_open(get_wrapped_obj(domain), &av_attr, &m_av, &m_context);
-    if (rc != 0)
-      throw runtime_error("Failed opening ofi address vector, reason: ", fi_strerror(rc));
-  }
-
-  /// (default) ctor
-  explicit address_vector() = delete;
-
-  /// copy ctor
-  address_vector(const address_vector&) = delete;
-
-  /// move ctor
-  address_vector(address_vector&& rhs)
-  : m_context(std::move(rhs.m_context))
-  , m_av(std::move(rhs.m_av))
-  {
-    rhs.m_av = nullptr;
-  }
-
-  /// dtor
-  ~address_vector() { fi_close(&m_av->fid); }
-
-  protected:
-  fi_context m_context;
-  fid_av* m_av;
-}; /* struct address_vector */
-
-using av = address_vector;
-
-
-namespace detail
-{
-
-auto get_native_wait_fd(fid* obj) -> int
-{
-  int fd;
-  auto rc = fi_control(obj, FI_GETWAIT, static_cast<void*>(&fd));
-  if (rc != FI_SUCCESS)
-    throw runtime_error("Failed retrieving native wait fd from ofi event queue, reason: ", fi_strerror(rc));
-
-  return fd;
-}
-
-} /* namespace detail */
-
-/**
- * @struct event_queue domain.hpp <include/asiofi/domain.hpp>
- * @brief Wraps ofi event queue
- */
-struct event_queue
-{
-  /// get wrapped C object
-  friend auto get_wrapped_obj(const event_queue& eq) -> fid_eq* { return eq.m_event_queue.get(); }
-
-  explicit event_queue(boost::asio::io_context& io_context, const fabric& fabric)
-  : m_fabric(fabric)
-  , m_event_queue(create_event_queue(fabric, m_context))
-  , m_io_context(io_context)
-  , m_eq_fd(io_context, detail::get_native_wait_fd(&m_event_queue.get()->fid))
-  {
-  }
-
-  event_queue() = delete;
-
-  event_queue(const event_queue&) = delete;
-
-  event_queue(event_queue&& rhs) = default;
-
-  enum class event : uint32_t {
-    connected = FI_CONNECTED,
-    connreq = FI_CONNREQ,
-    shutdown = FI_SHUTDOWN
-  };
-
-  template<typename CompletionHandler = std::function<void(event_queue::event, fid_t, info&&)>>
-  struct read_op
-  {
-    explicit read_op(fid_eq* eq, CompletionHandler&& handler)
-    : m_handler(handler)
-    , m_event_queue(eq)
+    /// get wrapped C object
+    friend auto get_wrapped_obj(const domain& domain) -> fid_domain*
     {
+      return domain.m_domain;
     }
 
-    auto operator()(const boost::system::error_code& error = boost::system::error_code()) -> void
+    /// ctor #1
+    explicit domain(const fabric& fabric)
+    : m_fabric(fabric)
     {
-      if (!error) {
-        // fi_eq_cm_entry {
-        // fid_t            fid;        [> fid associated with request <]
-        // struct fi_info  *info;       [> endpoint information <]
-        // uint8_t          data[];     [> app connection data <]
-        // };
-        fi_eq_cm_entry entry;
-        uint32_t event_;
-        auto rc = fi_eq_sread(m_event_queue, &event_, &entry, sizeof(entry), 100, 0);
-        if (rc == -FI_EAVAIL) {
-          // not implemented yet, see ft_eq_readerr()
-          throw runtime_error("Error pending on event queue, handling not yet implemented.");
-        } else if (rc < 0) {
-          throw runtime_error("Failed reading from event queue, reason: ", fi_strerror(rc));
-        } else {
-          auto event = static_cast<event_queue::event>(event_);
-
-          if (event == event_queue::event::connreq) {
-            m_handler(event, entry.fid, asiofi::info(entry.info));
-          } else {
-            m_handler(event, entry.fid, asiofi::info());
-          }
-        }
-      } else {
-        // not implemented yet
-      }
+      auto rc = fi_domain(get_wrapped_obj(fabric),
+                          get_wrapped_obj(fabric.get_info()),
+                          &m_domain,
+                          &m_context);
+      if (rc != 0)
+        throw runtime_error("Failed opening ofi domain, reason: ",
+          fi_strerror(rc));
     }
+
+    /// (default) ctor
+    explicit domain() = delete;
+
+    /// copy ctor
+    domain(const domain&) = delete;
+
+    /// move ctor
+    domain(domain&& rhs)
+    : m_fabric(std::move(rhs.m_fabric))
+    , m_context(std::move(rhs.m_context))
+    , m_domain(std::move(rhs.m_domain))
+    {
+      rhs.m_domain = nullptr;
+    }
+
+    /// dtor
+    ~domain() { fi_close(&m_domain->fid); }
+
+    /// get associated fabric object
+    auto get_fabric() const -> const fabric& { return m_fabric; }
+
+    /// get associated info object
+    auto get_info() const -> const info& { return m_fabric.get_info(); }
 
     private:
-    CompletionHandler m_handler;
-    fid_eq* m_event_queue;
-  };
-
-  template<typename CompletionHandler>
-  auto read(CompletionHandler&& handler) -> void
-  {
-    auto wait_obj = &m_event_queue.get()->fid;
-    auto rc = fi_trywait(get_wrapped_obj(m_fabric), &wait_obj, 1);
-    auto ex = boost::asio::get_associated_executor(handler, m_io_context);
-    auto read_handler = boost::asio::bind_executor(ex, read_op<>(m_event_queue.get(), std::move(handler)));
-    if (rc == FI_SUCCESS) {
-      m_eq_fd.async_wait(boost::asio::posix::stream_descriptor::wait_read, std::move(read_handler));
-    } else {
-      boost::asio::dispatch(ex, std::move(read_handler));
-    }
-  }
-
-  private:
-  using fid_eq_deleter = std::function<void(fid_eq*)>;
-
-  fi_context m_context;
-  const fabric& m_fabric;
-  std::unique_ptr<fid_eq, fid_eq_deleter> m_event_queue;
-  boost::asio::io_context& m_io_context;
-  boost::asio::posix::stream_descriptor m_eq_fd;
-
-  static auto create_event_queue(const fabric& fabric, fi_context& context) -> std::unique_ptr<fid_eq, fid_eq_deleter>
-  {
-    fid_eq* eq;
-    fi_eq_attr eq_attr = {
-      100,         // size_t               size;             [> # entries for EQ <]
-      0,           // uint64_t             flags;            [> operation flags <]
-      FI_WAIT_FD,  // enum fi_wait_obj     wait_obj;         [> requested wait object <]
-      0,           // int                  signaling_vector; [> interrupt affinity <]
-      nullptr      // struct fid_wait*     wait_set;         [> optional wait set <]
-    };
-    auto rc = fi_eq_open(get_wrapped_obj(fabric),
-                         &eq_attr,
-                         &eq,
-                         &context);
-    if (rc != FI_SUCCESS)
-      throw runtime_error("Failed opening ofi event queue, reason: ", fi_strerror(rc));
-
-    return {eq, [](fid_eq* eq){ fi_close(&eq->fid); }};
-  }
-}; /* struct event_queue */
-
-using eq = event_queue;
+    const fabric& m_fabric;
+    fi_context m_context;
+    fid_domain* m_domain; // TODO use smart pointer
+  }; /* struct domain */
 
 
 /**

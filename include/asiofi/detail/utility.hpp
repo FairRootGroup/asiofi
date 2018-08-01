@@ -6,29 +6,29 @@
  *                  copied verbatim in the file "LICENSE"                       *
  ********************************************************************************/
 
-#ifndef ASIOFI_ERRNO_HPP
-#define ASIOFI_ERRNO_HPP
+#ifndef ASIOFI_DETAIL_UTILITY_HPP
+#define ASIOFI_DETAIL_UTILITY_HPP
 
-#include <asiofi/detail/utility.hpp>
-#include <rdma/fi_errno.h>
-#include <stdexcept>
-#include <utility>
+#include <initializer_list>
+#include <sstream>
+#include <string>
 
 namespace asiofi
 {
-  /**
-   * @struct runtime_error errno.hpp <asiofi/errno.hpp>
-   * @brief Custom runtime error with convenient variadic string ctor
-   */
-  struct runtime_error : ::std::runtime_error
+  namespace detail
   {
+    /// concatenates a variable number of args with the << operator
+    /// via a stringstream
+    /// @param t objects to be concatenated
+    /// @return concatenated string
     template<typename ...T>
-    runtime_error(T&&... t)
-    : ::std::runtime_error::runtime_error(
-        detail::to_s(std::forward<T>(t)...))
+    auto to_s(T&&... t) -> std::string
     {
+      std::stringstream ss;
+      (void)std::initializer_list<int>{(ss << t, 0)...};
+      return ss.str();
     }
-  };
+  } /* namespace detail */
 } /* namespace asiofi */
 
-#endif /* ASIOFI_ERRNO_HPP */
+#endif /* ASIOFI_DETAIL_UTILITY_HPP */

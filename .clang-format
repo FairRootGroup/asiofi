@@ -1,0 +1,28 @@
+﻿---
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowShortBlocksOnASingleLine: true
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+BasedOnStyle: Mozilla
+BinPackArguments: false
+BinPackParameters: false
+BreakBeforeBinaryOperators: NonAssignment
+BreakConstructorInitializers: BeforeComma
+ColumnLimit: 90
+ConstructorInitializerIndentWidth: 2
+ContinuationIndentWidth: 2
+Cpp11BracedListStyle: true
+DerivePointerAlignment: true
+FixNamespaceComments: true
+IndentWidth: 2
+IndentWrappedFunctionNames: true
+IncludeBlocks: Regroup
+NamespaceIndentation: All
+PointerAlignment: Left
+SortIncludes: true
+SpacesBeforeTrailingComments: 3
+Standard: Cpp11
+UseTab: Never
+
+...
