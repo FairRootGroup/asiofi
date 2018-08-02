@@ -127,29 +127,98 @@ macro(set_asiofi_defaults)
   include(GNUInstallDirs)
 
   # Define install dirs
-  set(Asiofi_INSTALL_BINDIR ${CMAKE_INSTALL_BINDIR})
-  set(Asiofi_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME_LOWER})
-  set(Asiofi_INSTALL_INCDIR ${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME_LOWER})
-  set(Asiofi_INSTALL_DATADIR ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME_LOWER})
-  set(Asiofi_INSTALL_CMAKEMODDIR ${Asiofi_INSTALL_DATADIR}/cmake)
+  set(asiofi_INSTALL_BINDIR ${CMAKE_INSTALL_BINDIR})
+  set(asiofi_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME_LOWER})
+  set(asiofi_INSTALL_INCDIR ${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME_LOWER})
+  set(asiofi_INSTALL_DATADIR ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME_LOWER})
+  set(asiofi_INSTALL_CMAKEMODDIR ${asiofi_INSTALL_DATADIR}/cmake)
 
   # Define export set, only one for now
-  set(Asiofi_EXPORT_SET ${PROJECT_NAME}Targets)
+  set(asiofi_EXPORT_SET ${PROJECT_NAME}Targets)
 endmacro()
 
+function(join VALUES GLUE OUTPUT)
+  string(REGEX REPLACE "([^\\]|^);" "\\1${GLUE}" _TMP_STR "${VALUES}")
+  string(REGEX REPLACE "[\\](.)" "\\1" _TMP_STR "${_TMP_STR}") #fixes escaping
+  set(${OUTPUT} "${_TMP_STR}" PARENT_SCOPE)
+endfunction()
+
+function(pad str width char out)
+  cmake_parse_arguments(ARGS "" "COLOR" "" ${ARGN})
+  string(LENGTH ${str} length)
+  if(ARGS_COLOR)
+    math(EXPR padding "${width}-(${length}-10*${ARGS_COLOR})")
+  else()
+    math(EXPR padding "${width}-${length}")
+  endif()
+  if(padding GREATER 0)
+    foreach(i RANGE ${padding})
+      set(str "${str}${char}")
+    endforeach()
+  endif()
+  set(${out} ${str} PARENT_SCOPE)
+endfunction()
+
+function(generate_package_dependencies)
+  join("${PROJECT_INTERFACE_PACKAGE_DEPENDENCIES}" " " DEPS)
+  set(PACKAGE_DEPENDENCIES "\
+####### Expanded from @PACKAGE_DEPENDENCIES@ by configure_package_config_file() #######
+
+set(${PROJECT_NAME}_PACKAGE_DEPENDENCIES ${DEPS})
+
+")
+  foreach(dep IN LISTS PROJECT_INTERFACE_PACKAGE_DEPENDENCIES)
+    join("${PROJECT_INTERFACE_${dep}_COMPONENTS}" " " COMPS)
+    if(COMPS)
+      string(CONCAT PACKAGE_DEPENDENCIES ${PACKAGE_DEPENDENCIES} "\
+set(${PROJECT_NAME}_${dep}_COMPONENTS ${COMPS})
+")
+    endif()
+    if(PROJECT_INTERFACE_${dep}_VERSION)
+      string(CONCAT PACKAGE_DEPENDENCIES ${PACKAGE_DEPENDENCIES} "\
+set(${PROJECT_NAME}_${dep}_VERSION ${PROJECT_INTERFACE_${dep}_VERSION})
+")
+    endif()
+  endforeach()
+  string(CONCAT PACKAGE_DEPENDENCIES ${PACKAGE_DEPENDENCIES} "\
+
+#######################################################################################
+")
+set(PACKAGE_DEPENDENCIES ${PACKAGE_DEPENDENCIES} PARENT_SCOPE)
+endfunction()
+
+function(generate_package_components)
+  join("${PROJECT_PACKAGE_COMPONENTS}" " " COMPS)
+  set(PACKAGE_COMPONENTS "\
+####### Expanded from @PACKAGE_COMPONENTS@ by configure_package_config_file() #########
+
+set(${PROJECT_NAME}_PACKAGE_COMPONENTS ${COMPS})
+
+")
+  foreach(comp IN LISTS PROJECT_PACKAGE_COMPONENTS)
+    string(CONCAT PACKAGE_COMPONENTS ${PACKAGE_COMPONENTS} "\
+set(${PROJECT_NAME}_${comp}_FOUND TRUE)
+")
+  endforeach()
+  string(CONCAT PACKAGE_COMPONENTS ${PACKAGE_COMPONENTS} "\
+
+check_required_components(${PROJECT_NAME})
+")
+set(PACKAGE_COMPONENTS ${PACKAGE_COMPONENTS} PARENT_SCOPE)
+endfunction()
 
 # Configure/Install CMake package
 macro(install_asiofi_cmake_package)
   # Install cmake modules
   install( FILES cmake/FindOFI.cmake
-    DESTINATION ${Asiofi_INSTALL_CMAKEMODDIR}
+    DESTINATION ${asiofi_INSTALL_CMAKEMODDIR}
   )
 
   include(CMakePackageConfigHelpers)
   set(PACKAGE_INSTALL_DESTINATION
     ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}-${PROJECT_VERSION}
   )
-  install(EXPORT ${Asiofi_EXPORT_SET}
+  install(EXPORT ${asiofi_EXPORT_SET}
     NAMESPACE ${PROJECT_NAME}::
     DESTINATION ${PACKAGE_INSTALL_DESTINATION}
     EXPORT_LINK_INTERFACE_LIBRARIES
@@ -158,6 +227,8 @@ macro(install_asiofi_cmake_package)
     ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake
     COMPATIBILITY AnyNewerVersion
   )
+  generate_package_dependencies() # fills ${PACKAGE_DEPENDENCIES}
+  generate_package_components() # fills ${PACKAGE_COMPONENTS}
   configure_package_config_file(
     ${CMAKE_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
@@ -169,4 +240,38 @@ macro(install_asiofi_cmake_package)
     ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake
     DESTINATION ${PACKAGE_INSTALL_DESTINATION}
   )
+endmacro()
+
+macro(find_package2 qualifier pkgname)
+  cmake_parse_arguments(ARGS "" "VERSION" "COMPONENTS" ${ARGN})
+
+  string(TOUPPER ${pkgname} pkgname_upper)
+  set(old_CPP ${CMAKE_PREFIX_PATH})
+  set(CMAKE_PREFIX_PATH ${${pkgname_upper}_ROOT} $ENV{${pkgname_upper}_ROOT} ${CMAKE_PREFIX_PATH})
+  if(ARGS_COMPONENTS)
+    find_package(${pkgname} ${ARGS_VERSION} QUIET COMPONENTS ${ARGS_COMPONENTS} ${ARGS_UNPARSED_ARGUMENTS})
+  else()
+    find_package(${pkgname} ${ARGS_VERSION} QUIET ${ARGS_UNPARSED_ARGUMENTS})
+  endif()
+  set(CMAKE_PREFIX_PATH ${old_CPP})
+  unset(old_CPP)
+
+  if(${pkgname}_FOUND)
+    if(${qualifier} STREQUAL PRIVATE)
+      set(PROJECT_${pkgname}_VERSION ${ARGS_VERSION})
+      set(PROJECT_${pkgname}_COMPONENTS ${ARGS_COMPONENTS})
+      set(PROJECT_PACKAGE_DEPENDENCIES ${PROJECT_PACKAGE_DEPENDENCIES} ${pkgname})
+    elseif(${qualifier} STREQUAL PUBLIC)
+      set(PROJECT_${pkgname}_VERSION ${ARGS_VERSION})
+      set(PROJECT_${pkgname}_COMPONENTS ${ARGS_COMPONENTS})
+      set(PROJECT_PACKAGE_DEPENDENCIES ${PROJECT_PACKAGE_DEPENDENCIES} ${pkgname})
+      set(PROJECT_INTERFACE_${pkgname}_VERSION ${ARGS_VERSION})
+      set(PROJECT_INTERFACE_${pkgname}_COMPONENTS ${ARGS_COMPONENTS})
+      set(PROJECT_INTERFACE_PACKAGE_DEPENDENCIES ${PROJECT_INTERFACE_PACKAGE_DEPENDENCIES} ${pkgname})
+    elseif(${qualifier} STREQUAL INTERFACE)
+      set(PROJECT_INTERFACE_${pkgname}_VERSION ${ARGS_VERSION})
+      set(PROJECT_INTERFACE_${pkgname}_COMPONENTS ${ARGS_COMPONENTS})
+      set(PROJECT_INTERFACE_PACKAGE_DEPENDENCIES ${PROJECT_INTERFACE_PACKAGE_DEPENDENCIES} ${pkgname})
+    endif()
+  endif()
 endmacro()

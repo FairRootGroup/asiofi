@@ -18,5 +18,5 @@ install(
   malloc_bw
 
   EXPORT ${PROJECT_NAME}Targets
-  DESTINATION ${Asiofi_INSTALL_BINDIR}
+  DESTINATION ${asiofi_INSTALL_BINDIR}
 )

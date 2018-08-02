@@ -20,7 +20,7 @@ endif()
 
 # This should be the default as of CMake 3.1, but it is not set. BUG? Also, it does not work
 set(PKG_CONFIG_USE_CMAKE_PREFIX_PATH 1)
-find_package(PkgConfig)
+find_package(PkgConfig QUIET)
 
 if(PKG_CONFIG_FOUND)
   # Find include dir and dependencies from pkgconfig
@@ -41,8 +41,8 @@ if(PKG_CONFIG_FOUND)
     PATH_SUFFIXES lib
   )
 
-  # Just take the include dir found by the PkgConfig module
-  set(OFI_INCLUDE_DIR ${_OFI_INCLUDEDIR})
+  # Just take the include dirs found by the PkgConfig module
+  set(OFI_INCLUDE_DIRS ${_OFI_INCLUDEDIR})
 
   # Find fi_info command to be able to check required features of the OFI installation
   find_program(OFI_INFO_EXECUTABLE
@@ -73,17 +73,17 @@ if(PKG_CONFIG_FOUND)
   # Check search result, check version constraints and print status
   include(FindPackageHandleStandardArgs)
   find_package_handle_standard_args(OFI
-    REQUIRED_VARS OFI_LIBFABRIC OFI_INCLUDE_DIR OFI_INFO_EXECUTABLE
+    REQUIRED_VARS OFI_LIBFABRIC OFI_INCLUDE_DIRS OFI_INFO_EXECUTABLE
     VERSION_VAR OFI_VERSION
     HANDLE_COMPONENTS
   )
 endif()
 
-if(OFI_FOUND)
+if(NOT TARGET OFI::libfabric AND OFI_FOUND)
   # Define an imported target
   add_library(OFI::libfabric SHARED IMPORTED GLOBAL)
   set_target_properties(OFI::libfabric PROPERTIES
     IMPORTED_LOCATION ${OFI_LIBFABRIC}
-    INTERFACE_INCLUDE_DIRECTORIES ${OFI_INCLUDE_DIR}
+    INTERFACE_INCLUDE_DIRECTORIES ${OFI_INCLUDE_DIRS}
   )
 endif()
