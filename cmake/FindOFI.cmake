@@ -8,13 +8,22 @@
 
 # According to the docs the modification of the PKG_CONFIG_PATH environment should
 # not be necessary, but it does not work otherwise.
+
+if(CMAKE_PREFIX_PATH)
+  set(OLD_CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH})
+  foreach(path IN LISTS CMAKE_PREFIX_PATH)
+    set(CMAKE_PREFIX_PATH "${path}/lib/pkgconfig" ${CMAKE_PREFIX_PATH})
+    set(ENV{PKG_CONFIG_PATH} "${path}/lib/pkgconfig:" $ENV{PKG_CONFIG_PATH})
+  endforeach()
+endif()
+
 if(OFI_ROOT)
-  list(APPEND CMAKE_PREFIX_PATH "${OFI_ROOT}/lib/pkgconfig")
+  set(CMAKE_PREFIX_PATH "${OFI_ROOT}/lib/pkgconfig" ${CMAKE_PREFIX_PATH})
   set(ENV{PKG_CONFIG_PATH} "${OFI_ROOT}/lib/pkgconfig:" $ENV{PKG_CONFIG_PATH})
 endif()
 
 if(ENV{OFI_ROOT})
-  list(APPEND CMAKE_PREFIX_PATH "$ENV{OFI_ROOT}/lib/pkgconfig")
+  set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "$ENV{OFI_ROOT}/lib/pkgconfig" ${CMAKE_PREFIX_PATH})
   set(ENV{PKG_CONFIG_PATH} "$ENV{OFI_ROOT}/lib/pkgconfig:" $ENV{PKG_CONFIG_PATH})
 endif()
 
@@ -86,4 +95,8 @@ if(NOT TARGET OFI::libfabric AND OFI_FOUND)
     IMPORTED_LOCATION ${OFI_LIBFABRIC}
     INTERFACE_INCLUDE_DIRECTORIES ${OFI_INCLUDE_DIRS}
   )
+endif()
+
+if(OLD_CMAKE_PREFIX_PATH)
+  set(CMAKE_PREFIX_PATH ${OLD_CMAKE_PREFIX_PATH})
 endif()
