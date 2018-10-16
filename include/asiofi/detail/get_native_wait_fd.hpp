@@ -20,7 +20,7 @@ namespace asiofi
     /// operations on OFI objects.
     /// @param fid* OFI object asynchronous operations are performed on
     /// @return int wait file descriptor
-    auto get_native_wait_fd(fid* obj) -> int
+    inline auto get_native_wait_fd(fid* obj) -> int
     {
       int fd;
 
