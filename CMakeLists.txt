@@ -88,6 +88,9 @@ install(DIRECTORY
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   PATTERN *.in EXCLUDE
 )
+install(FILES include/asiofi.hpp
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
 
 install_asiofi_cmake_package()
 ################################################################################
