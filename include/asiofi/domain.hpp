@@ -100,14 +100,13 @@ struct completion_queue
   explicit completion_queue(boost::asio::io_context::strand& strand,
                             direction dir,
                             const domain& domain)
-  : m_domain(domain)
-  , m_completion_queue(create_completion_queue(
-    dir, domain.get_info(), domain, m_context))
-  , m_strand(strand)
-  , m_cq_fd(strand.context(),
-    detail::get_native_wait_fd(&m_completion_queue->fid))
+    : m_domain(domain)
+    , m_completion_queue(
+        create_completion_queue(dir, domain.get_info(), domain, m_context))
+    , m_strand(strand)
+    , m_cq_fd(strand.context(), detail::get_native_wait_fd(&m_completion_queue->fid))
   {
-    post_reader(); // Start reading CQ events
+    post_reader();   // Start reading CQ events
   }
 
   completion_queue() = delete;

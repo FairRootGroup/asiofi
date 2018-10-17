@@ -27,15 +27,17 @@ namespace asiofi
   struct event_queue
   {
     /// get wrapped C object
-    friend auto get_wrapped_obj(const event_queue& eq) -> fid_eq* { return eq.m_event_queue.get(); }
+    friend auto get_wrapped_obj(const event_queue& eq) -> fid_eq*
+    {
+      return eq.m_event_queue.get();
+    }
 
     explicit event_queue(boost::asio::io_context& io_context, const fabric& fabric)
-    : m_fabric(fabric)
-    , m_event_queue(create_event_queue(fabric, m_context))
-    , m_io_context(io_context)
-    , m_eq_fd(io_context, detail::get_native_wait_fd(&m_event_queue.get()->fid))
-    {
-    }
+      : m_fabric(fabric)
+      , m_event_queue(create_event_queue(fabric, m_context))
+      , m_io_context(io_context)
+      , m_eq_fd(io_context, detail::get_native_wait_fd(&m_event_queue.get()->fid))
+    {}
 
     event_queue() = delete;
 
@@ -43,7 +45,8 @@ namespace asiofi
 
     event_queue(event_queue&& rhs) = default;
 
-    enum class event : uint32_t {
+    enum class event : uint32_t
+    {
       connected = FI_CONNECTED,
       connreq = FI_CONNREQ,
       shutdown = FI_SHUTDOWN
@@ -58,6 +61,30 @@ namespace asiofi
       {
       }
 
+      auto reader_handle_error() -> void
+      {
+        // struct fi_eq_err_entry {
+	      // fid_t    fid;         /* fid associated with error */
+	      // void     *context;    /* operation context */
+        // uint64_t data;        /* completion-specific data */
+        // int      err;         /* positive error code */
+        // int      prov_errno;  /* provider error code */
+        // void     *err_data;   /* additional error data */
+        // size_t   err_data_size; /* size of err_data */
+        // };
+        fi_eq_err_entry error;
+        error.err_data_size = 0;
+        auto rc = fi_eq_readerr(m_event_queue, &error, 0);
+        assert(rc != -FI_EAGAIN); // should not happen
+        if (rc < 0) {
+          throw runtime_error("Failed reading error entry from event queue, reason: ", fi_strerror(rc));
+        } else {
+          throw runtime_error("Failed event, reason: ", fi_eq_strerror(m_event_queue,
+                                                                       error.prov_errno,
+                                                                       error.err_data, nullptr, 0));
+        }
+      }
+
       auto operator()(const boost::system::error_code& error = boost::system::error_code()) -> void
       {
         if (!error) {
@@ -70,8 +97,9 @@ namespace asiofi
           uint32_t event_;
           auto rc = fi_eq_sread(m_event_queue, &event_, &entry, sizeof(entry), 100, 0);
           if (rc == -FI_EAVAIL) {
+            reader_handle_error();
             // not implemented yet, see ft_eq_readerr()
-            throw runtime_error("Error pending on event queue, handling not yet implemented.");
+            // throw runtime_error("Error pending on event queue, handling not yet implemented.");
           } else if (rc < 0) {
             throw runtime_error("Failed reading from event queue, reason: ", fi_strerror(rc));
           } else {
