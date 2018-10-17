@@ -9,14 +9,17 @@
 #ifndef ASIOFI_CONNECTED_ENDPOINT_HPP
 #define ASIOFI_CONNECTED_ENDPOINT_HPP
 
+#include <arpa/inet.h>
 #include <asiofi/domain.hpp>
 #include <asiofi/errno.hpp>
 #include <asiofi/event_queue.hpp>
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/io_context_strand.hpp>
+#include <cassert>
 #include <functional>
 #include <iostream>
+#include <netinet/in.h>
 #include <rdma/fi_cm.h>
 #include <rdma/fi_endpoint.h>
 #include <utility>
@@ -223,6 +226,18 @@ namespace asiofi {
         throw runtime_error("Failed shutting down ofi connected_endpoint, reason: ",
                             fi_strerror(rc));
       }
+    }
+
+    auto get_local_address() -> sockaddr_in
+    {
+      sockaddr_in addr;
+      size_t addrlen = sizeof(sockaddr_in);
+      auto rc = fi_getname(&(m_connected_endpoint.get()->fid), &addr, &addrlen);
+      if (rc != FI_SUCCESS)
+          throw runtime_error("Failed retrieving native address from ofi connected_endpoint, reason: ", fi_strerror(rc));
+      assert(addrlen == sizeof(sockaddr_in));
+
+      return addr;
     }
 
   private:
