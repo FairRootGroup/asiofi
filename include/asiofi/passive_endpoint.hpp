@@ -76,9 +76,9 @@ namespace asiofi
       if (rc != 0)
         throw runtime_error("Failed listening on ofi passive_ep, reason: ", fi_strerror(rc));
 
-      m_eq.read([&](eq::event event, fid_t handle, info&& info){
+      m_eq.read([&, _handler = std::forward<CompletionHandler>(handler)](eq::event event, fid_t handle, info&& info){
         if (event == eq::event::connreq) {
-          handler(handle, std::move(info));
+          _handler(handle, std::move(info));
         } else {
           throw runtime_error("Unexpected event read from ofi event queue, ",
                               "expected: ", static_cast<uint32_t>(eq::event::connreq), " (event::connreq), ",

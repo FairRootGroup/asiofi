@@ -116,15 +116,16 @@ namespace asiofi {
                             " on ofi connected_endpoint, reason: ",
                             fi_strerror(rc));
 
-      m_eq.read([&](eq::event event, fid_t handle, info&& info) {
-        if (event == eq::event::connected) {
-          handler();
-        } else {
-          throw runtime_error(
-            "Unexpected event read from ofi event queue, expected FI_CONNECTED, got: ",
-            static_cast<uint32_t>(event));
-        }
-      });
+      m_eq.read(
+        [&, _handler = std::forward<CompletionHandler>(handler)](eq::event event, fid_t handle, info&& info) {
+          if (event == eq::event::connected) {
+            _handler();
+          } else {
+            throw runtime_error(
+              "Unexpected event read from ofi event queue, expected FI_CONNECTED, got: ",
+              static_cast<uint32_t>(event));
+          }
+        });
     }
 
     template<typename CompletionHandler>
@@ -134,15 +135,16 @@ namespace asiofi {
       if (rc != FI_SUCCESS)
         throw runtime_error("Failed accepting connection, reason: ", fi_strerror(rc));
 
-      m_eq.read([&](eq::event event, fid_t handle, info&& info) {
-        if (event == eq::event::connected) {
-          handler();
-        } else {
-          throw runtime_error(
-            "Unexpected event read from ofi event queue, expected FI_CONNECTED, got: ",
-            static_cast<uint32_t>(event));
-        }
-      });
+      m_eq.read(
+        [&, _handler = std::forward<CompletionHandler>(handler)](eq::event event, fid_t handle, info&& info) {
+          if (event == eq::event::connected) {
+            _handler();
+          } else {
+            throw runtime_error(
+              "Unexpected event read from ofi event queue, expected FI_CONNECTED, got: ",
+              static_cast<uint32_t>(event));
+          }
+        });
     }
 
     template<typename CompletionHandler>
