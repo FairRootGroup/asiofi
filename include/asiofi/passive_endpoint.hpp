@@ -9,14 +9,17 @@
 #ifndef ASIOFI_PASSIVE_ENDPOINT_HPP
 #define ASIOFI_PASSIVE_ENDPOINT_HPP
 
+#include <arpa/inet.h>
 #include <asiofi/errno.hpp>
 #include <asiofi/event_queue.hpp>
 #include <asiofi/fabric.hpp>
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/io_context_strand.hpp>
+#include <cassert>
 #include <functional>
 #include <iostream>
+#include <netinet/in.h>
 #include <rdma/fi_cm.h>
 #include <rdma/fi_endpoint.h>
 #include <utility>
@@ -92,6 +95,18 @@ namespace asiofi
       auto rc = fi_reject(m_pep.get(), handle, nullptr, 0);
       if (rc != 0)
         throw runtime_error("Failed rejecting connection request (", handle, ") on ofi passive connected_endpoint, reason: ", fi_strerror(rc));
+    }
+
+    auto get_local_address() -> sockaddr_in
+    {
+      sockaddr_in addr;
+      size_t addrlen = sizeof(sockaddr_in);
+      auto rc = fi_getname(&(m_pep.get()->fid), &addr, &addrlen);
+      if (rc != FI_SUCCESS)
+          throw runtime_error("Failed retrieving native address from ofi passive_endpoint, reason: ", fi_strerror(rc));
+      assert(addrlen == sizeof(sockaddr_in));
+
+      return addr;
     }
 
     private:
