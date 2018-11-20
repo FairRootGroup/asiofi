@@ -285,7 +285,7 @@ struct memory_region
   explicit memory_region(const domain& domain, boost::asio::mutable_buffer buffer, access access)
   : m_memory_region(std::move(create_memory_region(domain, buffer, access, m_context.get())))
   {
-    // std::cout << "registered memory region: local_desc=" << desc() << " buf=" << buffer.data() << " size=" << buffer.size() << " access=0x" << std::hex << static_cast<uint64_t>(access) << std::dec << std::endl;
+    std::cout << "registered memory region: local_desc=" << desc() << " buf=" << buffer.data() << " size=" << buffer.size() << " access=0x" << std::hex << static_cast<uint64_t>(access) << std::dec << std::endl;
   }
 
   memory_region(const memory_region&) = default;
@@ -297,11 +297,11 @@ struct memory_region
     return fi_mr_desc(m_memory_region.get());
   }
 
-  // ~memory_region()
-  // {
-    // if (m_memory_region.get() && (m_memory_region.use_count() == 1))
-      // std::cout << "unregistering memory region: local_desc=" << desc() << " fid_mr*=" << m_memory_region.get() << std::endl;
-  // }
+  ~memory_region()
+  {
+    if (m_memory_region.get() && (m_memory_region.use_count() == 1))
+      std::cout << "unregistering memory region: local_desc=" << desc() << " fid_mr*=" << m_memory_region.get() << std::endl;
+  }
 
   private:
   using fid_mr_deleter = std::function<void(fid_mr*)>;
@@ -315,7 +315,7 @@ struct memory_region
     fid_mr* mr;
     auto rc = fi_mr_reg(get_wrapped_obj(domain), buffer.data(), buffer.size(), static_cast<uint64_t>(access), 0, 0, 0, &mr, context);
     if (rc != 0)
-      throw runtime_error("Failed registering ofi memory region, reason: ", fi_strerror(rc));
+      throw runtime_error("Failed registering ofi memory region (", buffer.data(),",",buffer.size(),"), reason: ", fi_strerror(rc));
 
     return {mr, [](fid_mr* mr){
       fi_close(&mr->fid);
