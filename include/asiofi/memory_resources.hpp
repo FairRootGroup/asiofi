@@ -44,7 +44,7 @@ struct allocated_pool_resource : boost::container::pmr::synchronized_pool_resour
   protected:
   auto do_allocate(std::size_t bytes, std::size_t alignment) -> void* override
   {
-    auto ptr = boost::container::pmr::unsynchronized_pool_resource::do_allocate(bytes, alignment);
+    auto ptr = boost::container::pmr::synchronized_pool_resource::do_allocate(bytes, alignment);
 
     if (m_allocated.insert(ptr).second) {
       std::memset(ptr, 0, bytes); // TODO see if we need stronger page pinning here
@@ -60,7 +60,7 @@ struct allocated_pool_resource : boost::container::pmr::synchronized_pool_resour
 
   auto do_deallocate(void* p, std::size_t bytes, std::size_t alignment) -> void override
   {
-    boost::container::pmr::unsynchronized_pool_resource::do_deallocate(p, bytes, alignment);
+    boost::container::pmr::synchronized_pool_resource::do_deallocate(p, bytes, alignment);
 
     // std::cout << "deallocated: ptr=" << p << ", size=" << bytes << std::endl;
   }
