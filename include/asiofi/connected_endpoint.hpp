@@ -13,6 +13,7 @@
 #include <asiofi/domain.hpp>
 #include <asiofi/errno.hpp>
 #include <asiofi/event_queue.hpp>
+#include <boost/asio/associated_executor.hpp>
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/io_context_strand.hpp>
@@ -117,7 +118,7 @@ namespace asiofi {
                             fi_strerror(rc));
 
       m_eq.read(
-        [&, _handler = std::forward<CompletionHandler>(handler)](eq::event event, fid_t handle, info&& info) {
+        [&, _handler = std::move(handler)](eq::event event, fid_t handle, info&& info) {
           if (event == eq::event::connected) {
             _handler();
           } else {
@@ -136,7 +137,7 @@ namespace asiofi {
         throw runtime_error("Failed accepting connection, reason: ", fi_strerror(rc));
 
       m_eq.read(
-        [&, _handler = std::forward<CompletionHandler>(handler)](eq::event event, fid_t handle, info&& info) {
+        [&, _handler = std::move(handler)](eq::event event, fid_t handle, info&& info) {
           if (event == eq::event::connected) {
             _handler();
           } else {
@@ -157,9 +158,9 @@ namespace asiofi {
         std::unique_ptr<fi_context>(new fi_context{nullptr, nullptr, nullptr, nullptr});
 
       // std::cout << "fi_send: buf=" << buffer.data()
-      //                  << ", len=" << buffer.size()
-      //                  << ", desc=" << mr_desc
-      //                  << ", ctx=" << ctx.get() << std::endl;
+                       // << ", len=" << buffer.size()
+                       // << ", desc=" << mr_desc
+                       // << ", ctx=" << ctx.get() << std::endl;
       auto rc = fi_send(m_connected_endpoint.get(),
                         buffer.data(),
                         buffer.size(),
@@ -172,16 +173,17 @@ namespace asiofi {
           fi_strerror(rc));
       }
 
+      auto ex = boost::asio::get_associated_executor(handler, m_tx_strand);
       m_tx_cq.read(
         boost::asio::bind_executor(
-          m_tx_strand, std::bind(std::forward<CompletionHandler>(handler), buffer)),
+          ex, [=, handler2 = std::move(handler)]() mutable { handler2(buffer); }),
         std::move(ctx));
     }
 
     template<typename CompletionHandler>
     auto send(boost::asio::mutable_buffer buffer, CompletionHandler&& handler) -> void
     {
-      send(std::move(buffer), nullptr, std::forward<CompletionHandler>(handler));
+      send(std::move(buffer), nullptr, std::move(handler));
     }
 
     template<typename CompletionHandler>
@@ -209,16 +211,17 @@ namespace asiofi {
           fi_strerror(rc));
       }
 
+      auto ex = boost::asio::get_associated_executor(handler, m_rx_strand);
       m_rx_cq.read(
         boost::asio::bind_executor(
-          m_rx_strand, std::bind(std::forward<CompletionHandler>(handler), buffer)),
+          ex, [=, handler2 = std::move(handler)]() mutable { handler2(buffer); }),
         std::move(ctx));
     }
 
     template<typename CompletionHandler>
     auto recv(boost::asio::mutable_buffer buffer, CompletionHandler&& handler) -> void
     {
-      recv(std::move(buffer), nullptr, std::forward<CompletionHandler>(handler));
+      recv(std::move(buffer), nullptr, std::move(handler));
     }
 
     auto shutdown() -> void
