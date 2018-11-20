@@ -22,6 +22,7 @@
 #include <string>
 #include <sys/mman.h>
 #include <vector>
+#include <malloc.h>
 
 namespace bpo = boost::program_options;
 
@@ -146,12 +147,12 @@ try {
 
     benchmark::RegisterBenchmark("naive", &bm_naive)->
       RangeMultiplier(2)->Range(1<<12, 1<<29)->Threads(1);
-    benchmark::RegisterBenchmark("naive_hp", &bm_naive_hp)->
-      RangeMultiplier(2)->Range(1<<21, 1<<29)->Threads(1);
+    // benchmark::RegisterBenchmark("naive_hp", &bm_naive_hp)->
+      // RangeMultiplier(2)->Range(1<<21, 1<<29)->Threads(1);
     benchmark::RegisterBenchmark("reuse", &bm_reuse)->
       RangeMultiplier(2)->Range(1<<12, 1<<29)->Threads(1);
-    benchmark::RegisterBenchmark("reuse_hp", &bm_reuse_hp)->
-      RangeMultiplier(2)->Range(1<<21, 1<<29)->Threads(1);
+    // benchmark::RegisterBenchmark("reuse_hp", &bm_reuse_hp)->
+      // RangeMultiplier(2)->Range(1<<21, 1<<29)->Threads(1);
 
     benchmark::RunSpecifiedBenchmarks();
     std::exit(EXIT_SUCCESS);
