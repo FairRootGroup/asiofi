@@ -109,6 +109,13 @@ namespace asiofi
       return addr;
     }
 
+    auto set_local_address(sockaddr_in addr) -> void
+    {
+      auto rc = fi_setname(&(m_pep.get()->fid), &addr, sizeof(sockaddr_in));
+      if (rc != FI_SUCCESS)
+          throw runtime_error("Failed setting native address on ofi passive_endpoint, reason: ", fi_strerror(rc));
+    }
+
     private:
     using fid_pep_deleter = std::function<void(fid_pep*)>;
 

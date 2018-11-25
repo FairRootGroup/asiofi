@@ -105,15 +105,15 @@ namespace asiofi {
     }
 
     template<typename CompletionHandler>
-    auto connect(CompletionHandler&& handler) -> void
+    auto connect(sockaddr_in addr, CompletionHandler&& handler) -> void
     {
       auto rc = fi_connect(m_connected_endpoint.get(),
-                           get_wrapped_obj(m_domain.get_fabric().get_info())->dest_addr,
+                           &addr,
                            nullptr,
                            0);
       if (rc != FI_SUCCESS)
         throw runtime_error("Failed initiating connection to ",
-                            "",
+                            "", // TODO print addr
                             " on ofi connected_endpoint, reason: ",
                             fi_strerror(rc));
 
@@ -127,6 +127,14 @@ namespace asiofi {
               static_cast<uint32_t>(event));
           }
         });
+    }
+
+    template<typename CompletionHandler>
+    auto connect(CompletionHandler&& handler) -> void
+    {
+      connect(*static_cast<const sockaddr_in*>(
+                get_wrapped_obj(m_domain.get_fabric().get_info())->dest_addr),
+              std::move(handler));
     }
 
     template<typename CompletionHandler>
@@ -243,6 +251,13 @@ namespace asiofi {
       assert(addrlen == sizeof(sockaddr_in));
 
       return addr;
+    }
+
+    auto set_local_address(sockaddr_in addr) -> void
+    {
+      auto rc = fi_setname(&(m_connected_endpoint.get()->fid), &addr, sizeof(sockaddr_in));
+      if (rc != FI_SUCCESS)
+          throw runtime_error("Failed setting native address on ofi connected_endpoint, reason: ", fi_strerror(rc));
     }
 
   private:
