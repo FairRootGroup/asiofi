@@ -13,6 +13,7 @@
 #include <asiofi/errno.hpp>
 #include <asiofi/event_queue.hpp>
 #include <asiofi/fabric.hpp>
+#include <atomic>
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/io_context_strand.hpp>
@@ -41,6 +42,7 @@ namespace asiofi
     , m_io_context(io_context)
     , m_eq(io_context, fabric)
     , m_pep(create_passive_endpoint(fabric, m_context))
+    , m_listening(false)
     {
       // bind event queue to passive connected_endpoint registering for connection requests
       bind(m_eq, passive_endpoint::eq_flag::connreq);
@@ -75,9 +77,12 @@ namespace asiofi
     template<typename CompletionHandler>
     auto listen(CompletionHandler&& handler) -> void
     {
-      auto rc = fi_listen(m_pep.get());
-      if (rc != 0)
-        throw runtime_error("Failed listening on ofi passive_ep, reason: ", fi_strerror(rc));
+      if (!m_listening) {
+        auto rc = fi_listen(m_pep.get());
+        if (rc != 0)
+          throw runtime_error("Failed listening on ofi passive_ep, reason: ", fi_strerror(rc));
+        m_listening = true;
+      }
 
       m_eq.read([&, _handler = std::forward<CompletionHandler>(handler)](eq::event event, fid_t handle, info&& info){
         if (event == eq::event::connreq) {
@@ -124,6 +129,7 @@ namespace asiofi
     boost::asio::io_context& m_io_context;
     event_queue m_eq;
     std::unique_ptr<fid_pep, fid_pep_deleter> m_pep;
+    std::atomic<bool> m_listening;
 
     static auto create_passive_endpoint(const fabric& fabric, fi_context& context) -> std::unique_ptr<fid_pep, fid_pep_deleter> 
     {

@@ -8,10 +8,12 @@
 
 // #define BOOST_ASIO_ENABLE_HANDLER_TRACKING
 #include <asiofi.hpp>
+#include <asiofi/memory_resources.hpp>
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
+#include <boost/container/pmr/synchronized_pool_resource.hpp>
 #include <boost/program_options.hpp>
 #include <benchmark/benchmark.h>
 #include <chrono>
@@ -191,7 +193,9 @@ auto client(const std::string& address,
   asiofi::connected_endpoint endpoint(io_context, domain);
   endpoint.enable();
 
-  asiofi::allocated_pool_resource pool_mr;
+  asiofi::registered_memory_resource rmr(domain, message_size*1000);
+  auto desc = rmr.get_region().desc();
+  boost::container::pmr::synchronized_pool_resource pool_mr(boost::container::pmr::pool_options(), &rmr);
   size_t received(0);
   size_t posted(0);
   size_t queued(0);
@@ -199,7 +203,6 @@ auto client(const std::string& address,
   std::chrono::time_point<std::chrono::steady_clock> stop;
 
   boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
-  asiofi::memory_region mr(domain, buffer, asiofi::mr::access::recv);
 
   std::function<void()> post_recv_buffers;
 
@@ -227,7 +230,7 @@ auto client(const std::string& address,
       if (posted == 0) {
         start = std::chrono::steady_clock::now();
       }
-      endpoint.recv(buffer, mr.desc(), recv_completion_handler);
+      endpoint.recv(buffer, desc, recv_completion_handler);
       ++posted;
       ++queued;
     }
@@ -270,7 +273,9 @@ auto server(const std::string& address,
   asiofi::passive_endpoint pep(io_context, fabric);
   std::unique_ptr<asiofi::connected_endpoint> endpoint(nullptr);
 
-  asiofi::allocated_pool_resource pool_mr;
+  asiofi::registered_memory_resource rmr(domain, message_size*1000);
+  auto desc = rmr.get_region().desc();
+  boost::container::pmr::synchronized_pool_resource pool_mr(boost::container::pmr::pool_options(), &rmr);
   size_t sent(0);
   size_t posted(0);
   size_t queued(0);
@@ -278,7 +283,6 @@ auto server(const std::string& address,
   std::chrono::time_point<std::chrono::steady_clock> stop;
 
   boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
-  asiofi::memory_region mr(domain, buffer, asiofi::mr::access::send);
 
   std::function<void()> post_send_buffers;
 
@@ -312,7 +316,7 @@ auto server(const std::string& address,
     // std::cout << "enter post_send_buffers" << std::endl;
     // size_t at_start = queued;
     while (queued < queue_size && posted < iterations) {
-      endpoint->send(buffer, mr.desc(), send_completion_handler);
+      endpoint->send(buffer, desc, send_completion_handler);
       ++posted;
       ++queued;
     } 

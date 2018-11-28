@@ -292,7 +292,7 @@ struct memory_region
 
   memory_region(memory_region&&) = default;
 
-  auto desc() -> void*
+  auto desc() const -> void*
   {
     return fi_mr_desc(m_memory_region.get());
   }
