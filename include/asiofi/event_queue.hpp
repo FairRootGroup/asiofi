@@ -49,10 +49,11 @@ namespace asiofi
     {
       connected = FI_CONNECTED,
       connreq = FI_CONNREQ,
-      shutdown = FI_SHUTDOWN
+      shutdown = FI_SHUTDOWN,
+      connrefused
     };
 
-    template<typename CompletionHandler = std::function<void(event_queue::event, fid_t, info&&)>>
+    template<typename CompletionHandler = std::function<void(event_queue::event, info&&)>>
     struct read_op
     {
       explicit read_op(fid_eq* eq, CompletionHandler&& handler)
@@ -77,11 +78,16 @@ namespace asiofi
         auto rc = fi_eq_readerr(m_event_queue, &error, 0);
         assert(rc != -FI_EAGAIN); // should not happen
         if (rc < 0) {
-          throw runtime_error("Failed reading error entry from event queue, reason: ", fi_strerror(rc));
+          throw runtime_error(rc, "Failed reading error entry from event queue");
         } else {
-          throw runtime_error("Failed event, reason: ", fi_eq_strerror(m_event_queue,
-                                                                       error.prov_errno,
-                                                                       error.err_data, nullptr, 0));
+          if (error.err == FI_ECONNREFUSED) {
+            m_handler(event_queue::event::connrefused, asiofi::info());
+          } else {
+            throw runtime_error(
+              "Failed event, reason: ",
+              fi_eq_strerror(
+                m_event_queue, error.prov_errno, error.err_data, nullptr, 0));
+          }
         }
       }
 
@@ -98,17 +104,15 @@ namespace asiofi
           auto rc = fi_eq_sread(m_event_queue, &event_, &entry, sizeof(entry), 100, 0);
           if (rc == -FI_EAVAIL) {
             reader_handle_error();
-            // not implemented yet, see ft_eq_readerr()
-            // throw runtime_error("Error pending on event queue, handling not yet implemented.");
           } else if (rc < 0) {
-            throw runtime_error("Failed reading from event queue, reason: ", fi_strerror(rc));
+            throw runtime_error(rc, "Failed reading from event queue");
           } else {
             auto event = static_cast<event_queue::event>(event_);
 
             if (event == event_queue::event::connreq) {
-              m_handler(event, entry.fid, asiofi::info(entry.info));
+              m_handler(event, asiofi::info(entry.info));
             } else {
-              m_handler(event, entry.fid, asiofi::info());
+              m_handler(event, asiofi::info());
             }
           }
         } else {

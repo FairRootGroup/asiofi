@@ -233,8 +233,10 @@ auto client(const std::string& address,
     }
   };
 
-  auto connect_handler = [&]{
-    post_recv_buffers();
+  auto connect_handler = [&](asiofi::eq::event e){
+    if (e == asiofi::eq::event::connected) {
+      post_recv_buffers();
+    }
   };
 
   endpoint.connect(connect_handler);
@@ -323,7 +325,7 @@ auto server(const std::string& address,
     post_send_buffers();
   };
 
-  auto listen_handler = [&](fid_t handle, asiofi::info&& info) {
+  auto listen_handler = [&](asiofi::info&& info) {
     endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain, info);
     endpoint->enable();
     endpoint->accept(accept_handler);

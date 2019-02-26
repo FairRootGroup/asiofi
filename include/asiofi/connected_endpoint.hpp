@@ -89,8 +89,7 @@ namespace asiofi {
                            static_cast<uint64_t>(flag));
       if (rc != FI_SUCCESS)
         throw runtime_error(
-          "Failed binding ofi completion queue to ofi connected_endpoint, reason: ",
-          fi_strerror(rc));
+          rc, "Failed binding ofi completion queue to ofi connected_endpoint");
     }
 
     /// transition endpoint to enabled state
@@ -99,8 +98,7 @@ namespace asiofi {
       auto rc = fi_enable(m_connected_endpoint.get());
       if (rc != FI_SUCCESS)
         throw runtime_error(
-          "Failed transitioning ofi connected_endpoint to enabled state, reason: ",
-          fi_strerror(rc));
+          rc, "Failed transitioning ofi connected_endpoint to enabled state");
     }
 
     template<typename CompletionHandler>
@@ -116,16 +114,18 @@ namespace asiofi {
                             "",   // TODO print addr
                             " on ofi connected_endpoint");
 
-      m_eq.read(
-        [&, _handler = std::move(handler)](eq::event event, fid_t handle, info&& info) {
-          if (event == eq::event::connected) {
-            _handler();
-          } else {
+      m_eq.read([&, _handler = std::move(handler)](eq::event event, info&& info) {
+        switch (event) {
+          case eq::event::connected:
+          case eq::event::connrefused:
+            _handler(event);
+            break;
+          default:
             throw runtime_error(
-              "Unexpected event read from ofi event queue, expected FI_CONNECTED, got: ",
+              "Unexpected event read from ofi event queue, expected FI_CONNECTED or FI_ECONNREFUSED, got: ",
               static_cast<uint32_t>(event));
-          }
-        });
+        }
+      });
     }
 
     template<typename CompletionHandler>
@@ -144,7 +144,7 @@ namespace asiofi {
         throw runtime_error("Failed accepting connection, reason: ", fi_strerror(rc));
 
       m_eq.read(
-        [&, _handler = std::move(handler)](eq::event event, fid_t handle, info&& info) {
+        [&, _handler = std::move(handler)](eq::event event, info&& info) {
           if (event == eq::event::connected) {
             _handler();
           } else {
