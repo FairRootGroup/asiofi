@@ -37,8 +37,7 @@ namespace asiofi
       };
       auto rc = fi_av_open(get_wrapped_obj(domain), &av_attr, &m_av, &m_context);
       if (rc != 0)
-        throw runtime_error("Failed opening ofi address vector, reason: ",
-          fi_strerror(rc));
+        throw runtime_error(rc, "Failed opening ofi address vector");
     }
 
     /// (default) ctor

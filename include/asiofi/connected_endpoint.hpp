@@ -71,9 +71,8 @@ namespace asiofi {
     {
       auto rc = fi_ep_bind(m_connected_endpoint.get(), &get_wrapped_obj(eq)->fid, 0);
       if (rc != FI_SUCCESS)
-        throw runtime_error(
-          "Failed binding ofi event queue to ofi connected_endpoint, reason: ",
-          fi_strerror(rc));
+        throw runtime_error(rc,
+                            "Failed binding ofi event queue to ofi connected_endpoint");
     }
 
     enum class cq_flag : uint64_t
@@ -112,10 +111,10 @@ namespace asiofi {
                            nullptr,
                            0);
       if (rc != FI_SUCCESS)
-        throw runtime_error("Failed initiating connection to ",
-                            "", // TODO print addr
-                            " on ofi connected_endpoint, reason: ",
-                            fi_strerror(rc));
+        throw runtime_error(rc,
+                            "Failed initiating connection to ",
+                            "",   // TODO print addr
+                            " on ofi connected_endpoint");
 
       m_eq.read(
         [&, _handler = std::move(handler)](eq::event event, fid_t handle, info&& info) {

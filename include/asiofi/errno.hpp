@@ -22,12 +22,26 @@ namespace asiofi
    */
   struct runtime_error : ::std::runtime_error
   {
-    template<typename ...T>
+    template<typename... T>
     runtime_error(T&&... t)
-    : ::std::runtime_error::runtime_error(
-        detail::to_s(std::forward<T>(t)...))
-    {
-    }
+      : ::std::runtime_error::runtime_error(detail::to_s(std::forward<T>(t)...))
+      , error_code(-1337)
+    {}
+
+    template<typename... T>
+    runtime_error(int rc, T&&... t)
+      : ::std::runtime_error::runtime_error(
+          detail::to_s(std::forward<T>(t)..., ", ofi error: ", fi_strerror(rc)))
+      , error_code(rc)
+    {}
+
+    runtime_error(int rc)
+      : ::std::runtime_error::runtime_error(
+          detail::to_s("ofi error: ", fi_strerror(rc)))
+      , error_code(rc)
+    {}
+
+    int error_code;
   };
 } /* namespace asiofi */
 
