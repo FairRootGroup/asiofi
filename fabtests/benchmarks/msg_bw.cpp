@@ -7,6 +7,8 @@
  ********************************************************************************/
 
 // #define BOOST_ASIO_ENABLE_HANDLER_TRACKING
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <asiofi.hpp>
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/executor_work_guard.hpp>
@@ -114,6 +116,7 @@ try {
     ("port,p", bpo::value<std::string>()->default_value("5000"), "Server port")
     ("server,s", "Run server, otherwise client")
     ("provider,P", bpo::value<std::string>()->default_value("sockets"), "Provider")
+    ("domain,D", bpo::value<std::string>()->default_value(""), "Domain (HCA)")
     ("message-size,m", bpo::value<size_t>()->default_value(1024*1024), "Message size in Byte")
     ("iterations,i", bpo::value<size_t>()->default_value(100), "Number of messages to transfer")
     ("queue-size,q", bpo::value<size_t>()->default_value(10), "Maximum number of transfers to queue in parallel");
@@ -167,6 +170,7 @@ catch (const bpo::error& ex)
 auto client(const std::string& address,
             const std::string& port,
             const std::string& provider,
+            const std::string& domain_str,
             size_t message_size,
             size_t iterations,
             size_t queue_size) -> int
@@ -184,12 +188,21 @@ auto client(const std::string& address,
 
   asiofi::hints hints;
   hints.set_provider(provider);
-  asiofi::info info(address.c_str(), port.c_str(), 0, hints);
+  if (domain_str.length() > 0) hints.set_domain(domain_str);
+  // std::cout << hints << std::endl;
+  // asiofi::info info(address.c_str(), port.c_str(), 0, hints);
+  asiofi::info info(hints);
+  info.set_destination(address, port);
   // std::cout << info << std::endl;
   asiofi::fabric fabric(info);
   asiofi::domain domain(fabric);
   asiofi::connected_endpoint endpoint(io_context, domain);
   endpoint.enable();
+
+  // sockaddr_in sa;
+  // (void)inet_pton(AF_INET, address.c_str(), &(sa.sin_addr));
+  // sa.sin_port = htons(std::stoi(port));
+  // sa.sin_family = AF_INET;
 
   asiofi::allocated_pool_resource pool_mr;
   size_t received(0);
@@ -248,6 +261,7 @@ auto client(const std::string& address,
 auto server(const std::string& address,
             const std::string& port,
             const std::string& provider,
+            const std::string& domain_str,
             size_t message_size,
             size_t iterations,
             size_t queue_size) -> int
@@ -265,6 +279,7 @@ auto server(const std::string& address,
 
   asiofi::hints hints;
   hints.set_provider(provider);
+  if (domain_str.length() > 0) hints.set_domain(domain_str);
   asiofi::info info(address.c_str(), port.c_str(), FI_SOURCE, hints);
   // std::cout << info << std::endl;
   asiofi::fabric fabric(info);
@@ -346,6 +361,7 @@ auto main(int argc, char** argv) -> int
     return server(vm["host"].as<std::string>(),
                   vm["port"].as<std::string>(),
                   vm["provider"].as<std::string>(),
+                  vm["domain"].as<std::string>(),
                   vm["message-size"].as<size_t>(),
                   vm["iterations"].as<size_t>(),
                   vm["queue-size"].as<size_t>());
@@ -353,6 +369,7 @@ auto main(int argc, char** argv) -> int
     return client(vm["host"].as<std::string>(),
                   vm["port"].as<std::string>(),
                   vm["provider"].as<std::string>(),
+                  vm["domain"].as<std::string>(),
                   vm["message-size"].as<size_t>(),
                   vm["iterations"].as<size_t>(),
                   vm["queue-size"].as<size_t>());
