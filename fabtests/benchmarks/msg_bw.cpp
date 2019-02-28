@@ -7,8 +7,6 @@
  ********************************************************************************/
 
 // #define BOOST_ASIO_ENABLE_HANDLER_TRACKING
-#include <arpa/inet.h>
-#include <netinet/in.h>
 #include <asiofi.hpp>
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/executor_work_guard.hpp>
