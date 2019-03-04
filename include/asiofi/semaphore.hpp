@@ -61,6 +61,13 @@ namespace asiofi {
           }));
     }
 
+    auto wait() -> void
+    {
+      boost::asio::mutable_buffer mb(&m_read_buffer, 8);
+
+      m_descriptor.read_some(mb);
+    }
+
     template<typename CompletionHandler>
     auto async_signal(CompletionHandler&& handler) -> void
     {
@@ -81,6 +88,14 @@ namespace asiofi {
             }
             handler_(ec);
           }));
+    }
+
+    auto signal() -> void
+    {
+      m_signal_buffer = 1;
+      boost::asio::const_buffer cb(&m_signal_buffer, 8);
+
+      m_descriptor.write_some(cb);
     }
 
     auto get_value() -> uint64_t { return m_cnt; }
