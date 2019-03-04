@@ -34,12 +34,12 @@ find_package2(PUBLIC Boost VERSION 1.66 REQUIRED
 find_package2(PUBLIC OFI VERSION 1.6.0 REQUIRED
   COMPONENTS fi_sockets)
 
-if(BUILD_FABTESTS)
-  if(BENCHMARK_ROOT)
-    set(CMAKE_PREFIX_PATH ${BENCHMARK_ROOT} ${CMAKE_PREFIX_PATH})
-  endif()
-  find_package2(PRIVATE benchmark REQUIRED)
-endif()
+# if(BUILD_FABTESTS)
+  # if(BENCHMARK_ROOT)
+    # set(CMAKE_PREFIX_PATH ${BENCHMARK_ROOT} ${CMAKE_PREFIX_PATH})
+  # endif()
+  # find_package2(PRIVATE benchmark REQUIRED)
+# endif()
 ################################################################################
 
 
