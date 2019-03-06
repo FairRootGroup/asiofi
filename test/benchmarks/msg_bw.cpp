@@ -1,5 +1,5 @@
 /********************************************************************************
- *    Copyright (C) 2018 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    *
+ * Copyright (C) 2018-2019 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
  *                                                                              *
  *              This software is distributed under the terms of the             *
  *              GNU Lesser General Public Licence (LGPL) version 3,             *
@@ -32,85 +32,12 @@ std::unique_ptr<T> make_unique(Args&&... args)
     return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 }
 
-auto bm_naive(benchmark::State& state) -> void
-{
-  const size_t size = state.range(0);
-  const auto step = sizeof(size_t);
-
-  for (auto _ : state) {
-    const auto x = static_cast<size_t*>(std::malloc(size));
-    const auto end = x + size / sizeof(size_t);
-    for (auto it = x; it < end; it += step / sizeof(size_t)) *it = size_t();
-    std::free(x);
-  }
-
-  state.SetBytesProcessed(state.iterations() * size);
-}
-
-auto bm_naive_hp(benchmark::State& state) -> void
-{
-  const size_t size = state.range(0);
-  const auto step = sizeof(size_t);
-
-  for (auto _ : state) {
-    const auto x = static_cast<size_t*>(mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_HUGETLB, 0, 0));
-    if (x != MAP_FAILED) {
-      const auto end = x + size / sizeof(size_t);
-      for (auto it = x; it < end; it += step / sizeof(size_t)) *it = size_t();
-      munmap(static_cast<void*>(x), size);
-    } else {
-      std::cerr << "Allocation failed." << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  }
-
-  state.SetBytesProcessed(state.iterations() * size);
-}
-
-auto bm_reuse(benchmark::State& state) -> void
-{
-  const size_t size = state.range(0);
-  const auto step = sizeof(size_t);
-  const auto x = static_cast<size_t*>(std::malloc(size));
-  const auto end = x + size / sizeof(size_t);
-  for (auto it = x; it < end; it += step / sizeof(size_t)) *it = size_t();
-
-  for (auto _ : state) {
-    for (auto it = x; it < end; it += step / sizeof(size_t)) *it = size_t();
-  }
-
-  std::free(x);
-  state.SetBytesProcessed(state.iterations() * size);
-}
-
-auto bm_reuse_hp(benchmark::State& state) -> void
-{
-  const size_t size = state.range(0);
-  const auto step = sizeof(size_t);
-  const auto x = static_cast<size_t*>(mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_HUGETLB, 0, 0));
-  if (x != MAP_FAILED) {
-    const auto end = x + size / sizeof(size_t);
-    for (auto it = x; it < end; it += step / sizeof(size_t)) *it = size_t();
-
-    for (auto _ : state) {
-      for (auto it = x; it < end; it += step / sizeof(size_t)) *it = size_t();
-    }
-
-    munmap(static_cast<void*>(x), size);
-    state.SetBytesProcessed(state.iterations() * size);
-  } else {
-    std::cerr << "Allocation failed." << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-}
-
 auto handle_cli(int argc, char** argv, bpo::variables_map& vm) -> void
 try {
   bpo::options_description opts{"Options"};
   opts.add_options()
     ("help,h", "Help screen")
     ("version,v", "Print version")
-    ("memory", "Run local memory benchmark")
     ("port,p", bpo::value<std::string>()->default_value("5000"), "Server port")
     ("server,s", "Run server, otherwise client")
     ("provider,P", bpo::value<std::string>()->default_value("sockets"), "Provider")
@@ -118,7 +45,6 @@ try {
     ("message-size,m", bpo::value<size_t>()->default_value(1024*1024), "Message size in Byte")
     ("iterations,i", bpo::value<size_t>()->default_value(100), "Number of messages to transfer")
     ("queue-size,q", bpo::value<size_t>()->default_value(10), "Maximum number of transfers to queue in parallel");
-
   
   bpo::options_description hidden;
   hidden.add_options()
@@ -142,20 +68,6 @@ try {
     std::exit(EXIT_SUCCESS);
   } else if (vm.count("version")) {
     std::cout << "asiofi " << ASIOFI_GIT_VERSION << std::endl;
-    std::exit(EXIT_SUCCESS);
-  } else if (vm.count("memory")) {
-    benchmark::Initialize(&argc, argv);
-
-    benchmark::RegisterBenchmark("naive", &bm_naive)->
-      RangeMultiplier(2)->Range(1<<12, 1<<29)->Threads(1);
-    // benchmark::RegisterBenchmark("naive_hp", &bm_naive_hp)->
-      // RangeMultiplier(2)->Range(1<<21, 1<<29)->Threads(1);
-    benchmark::RegisterBenchmark("reuse", &bm_reuse)->
-      RangeMultiplier(2)->Range(1<<12, 1<<29)->Threads(1);
-    // benchmark::RegisterBenchmark("reuse_hp", &bm_reuse_hp)->
-      // RangeMultiplier(2)->Range(1<<21, 1<<29)->Threads(1);
-
-    benchmark::RunSpecifiedBenchmarks();
     std::exit(EXIT_SUCCESS);
   }
 }
