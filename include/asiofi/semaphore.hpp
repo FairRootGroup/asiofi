@@ -1,5 +1,5 @@
 /********************************************************************************
- *    Copyright (C) 2018 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    *
+ * Copyright (C) 2018-2019 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
  *                                                                              *
  *              This software is distributed under the terms of the             *
  *              GNU Lesser General Public Licence (LGPL) version 3,             *
@@ -15,7 +15,6 @@
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/io_context.hpp>
-#include <boost/asio/io_context_strand.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
 #include <cassert>
 #include <cstdint>
@@ -32,8 +31,8 @@ namespace asiofi {
   struct semaphore
   {
     explicit semaphore(boost::asio::io_context& ioc, uint64_t initial_value = 1)
-      : m_strand(ioc)
-      , m_descriptor(m_strand.context(), create_eventfd(initial_value))
+      : m_io_context(ioc)
+      , m_descriptor(m_io_context, create_eventfd(initial_value))
       , m_read_buffer(0)
       , m_signal_buffer(0)
       , m_cnt(initial_value)
@@ -43,7 +42,7 @@ namespace asiofi {
     auto async_wait(CompletionHandler&& handler) -> void
     {
       boost::asio::mutable_buffer mb(&m_read_buffer, 8);
-      auto ex = boost::asio::get_associated_executor(handler, m_strand);
+      auto ex = boost::asio::get_associated_executor(handler, m_io_context);
 
       m_descriptor.async_read_some(
         mb,
@@ -73,7 +72,7 @@ namespace asiofi {
     {
       m_signal_buffer = 1;
       boost::asio::const_buffer cb(&m_signal_buffer, 8);
-      auto ex = boost::asio::get_associated_executor(handler, m_strand);
+      auto ex = boost::asio::get_associated_executor(handler, m_io_context);
 
       m_descriptor.async_write_some(
         cb,
@@ -101,7 +100,7 @@ namespace asiofi {
     auto get_value() -> uint64_t { return m_cnt; }
 
   private:
-    boost::asio::io_context::strand m_strand;
+    boost::asio::io_context& m_io_context;
     boost::asio::posix::stream_descriptor m_descriptor;
     uint64_t m_read_buffer, m_signal_buffer;
     std::atomic<uint64_t> m_cnt;

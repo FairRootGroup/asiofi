@@ -10,13 +10,13 @@
 #define ASIOFI_CONNECTED_ENDPOINT_HPP
 
 #include <arpa/inet.h>
+#include <asiofi/completion_queue.hpp>
 #include <asiofi/domain.hpp>
 #include <asiofi/errno.hpp>
 #include <asiofi/event_queue.hpp>
 #include <boost/asio/associated_executor.hpp>
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/io_context.hpp>
-#include <boost/asio/io_context_strand.hpp>
 #include <cassert>
 #include <functional>
 #include <iostream>
@@ -45,10 +45,8 @@ namespace asiofi {
       : m_io_context(io_context)
       , m_domain(domain)
       , m_eq(m_io_context, domain.get_fabric())
-      , m_rx_strand(m_io_context)
-      , m_tx_strand(m_io_context)
-      , m_rx_cq(m_rx_strand, cq::direction::rx, domain)
-      , m_tx_cq(m_tx_strand, cq::direction::tx, domain)
+      , m_rx_cq(m_io_context, cq::direction::rx, domain)
+      , m_tx_cq(m_io_context, cq::direction::tx, domain)
       , m_connected_endpoint(create_connected_endpoint(domain, info, m_context))
     {
       bind(m_eq);
@@ -180,7 +178,7 @@ namespace asiofi {
           fi_strerror(rc));
       }
 
-      auto ex = boost::asio::get_associated_executor(handler, m_tx_strand);
+      auto ex = boost::asio::get_associated_executor(handler, m_io_context);
       m_tx_cq.read(
         boost::asio::bind_executor(
           ex, [=, handler2 = std::move(handler)]() mutable { handler2(buffer); }),
@@ -218,7 +216,7 @@ namespace asiofi {
           fi_strerror(rc));
       }
 
-      auto ex = boost::asio::get_associated_executor(handler, m_rx_strand);
+      auto ex = boost::asio::get_associated_executor(handler, m_io_context);
       m_rx_cq.read(
         boost::asio::bind_executor(
           ex, [=, handler2 = std::move(handler)]() mutable { handler2(buffer); }),
@@ -266,7 +264,6 @@ namespace asiofi {
     boost::asio::io_context& m_io_context;
     const domain& m_domain;
     event_queue m_eq;
-    boost::asio::io_context::strand m_rx_strand, m_tx_strand;
     completion_queue m_rx_cq, m_tx_cq;
     std::unique_ptr<fid_ep, fid_ep_deleter> m_connected_endpoint;
 

@@ -16,7 +16,6 @@
 #include <atomic>
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/io_context.hpp>
-#include <boost/asio/io_context_strand.hpp>
 #include <cassert>
 #include <functional>
 #include <iostream>

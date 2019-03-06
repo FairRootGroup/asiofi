@@ -11,6 +11,7 @@
 
 #include <asiofi/detail/get_native_wait_fd.hpp>
 #include <asiofi/fabric.hpp>
+#include <boost/asio/bind_executor.hpp>
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
