@@ -18,10 +18,8 @@ Bindings (Core):
 - [Boost.Asio](http://www.boost.org/) (Hint location via `-DBOOST_ROOT=/path/to/boost`)
 - [Boost.Container](http://www.boost.org/) (Hint location via `-DBOOST_ROOT=/path/to/boost`)
 
-Fabtests (Optional, enable with `-DBUILD_FABTESTS=ON`):
+Tests (Optional, enable with `-DBUILD_TESTING=ON`):
 
-- [Google benchmark](https://github.com/google/benchmark) (Hint location via `-DBENCHMARK_ROOT=/path/to/benchmark`)
-- [Boost.Interprocess](http://www.boost.org/) (Hint location via `-DBOOST_ROOT=/path/to/boost`)
 - [Boost.Program\_options](http://www.boost.org/) (Hint location via `-DBOOST_ROOT=/path/to/boost`)
 
 ## Quickstart

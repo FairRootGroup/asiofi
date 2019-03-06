@@ -20,55 +20,55 @@ project(asiofi VERSION ${asiofi_VERSION} LANGUAGES CXX)
 message("${BWhite}${PROJECT_NAME}${CR} ${asiofi_GIT_VERSION} from ${asiofi_DATE}")
 
 set_asiofi_defaults()
+include(CTest)
 ################################################################################
 
 
 # Build options ################################################################
-option(BUILD_FABTESTS "Build fabtests." OFF)
+include(CMakeDependentOption)
+option(BUILD_CORE "Build asiofi library." ON)
+cmake_dependent_option(BUILD_TESTING "Build tests." OFF "BUILD_CORE" OFF)
 ################################################################################
 
 
 # Dependencies #################################################################
-set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
-set(THREADS_PREFER_PTHREAD_FLAG TRUE)
-find_package(Threads REQUIRED)
+if(BUILD_CORE)
+  set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
+  set(THREADS_PREFER_PTHREAD_FLAG TRUE)
+  find_package(Threads REQUIRED)
 
-find_package2(PUBLIC Boost VERSION 1.66 REQUIRED
-  COMPONENTS system program_options container)
-find_package2(PUBLIC OFI VERSION 1.6.0 REQUIRED
-  COMPONENTS fi_sockets)
-
-# if(BUILD_FABTESTS)
-  # if(BENCHMARK_ROOT)
-    # set(CMAKE_PREFIX_PATH ${BENCHMARK_ROOT} ${CMAKE_PREFIX_PATH})
-  # endif()
-  # find_package2(PRIVATE benchmark REQUIRED)
-# endif()
+  find_package2(PUBLIC Boost VERSION 1.66 REQUIRED
+    COMPONENTS system program_options container)
+  find_package2(PUBLIC OFI VERSION 1.6.0 REQUIRED
+    COMPONENTS fi_sockets)
+endif()
 ################################################################################
 
 
 # Targets ######################################################################
-# Configure Version.hpp
-configure_file(include/${PROJECT_NAME_LOWER}/version.hpp.in
-  ${CMAKE_BINARY_DIR}/include/${PROJECT_NAME_LOWER}/version.hpp
-  @ONLY
-)
+if(BUILD_CORE)
+  # Configure Version.hpp
+  configure_file(include/${PROJECT_NAME_LOWER}/version.hpp.in
+    ${CMAKE_BINARY_DIR}/include/${PROJECT_NAME_LOWER}/version.hpp
+    @ONLY
+  )
 
-# Define the library
-add_library(asiofi INTERFACE)
-target_link_libraries(asiofi
-  INTERFACE
-  Boost::boost
-  Threads::Threads
-  Boost::system
-  Boost::container
-  OFI::libfabric
-)
-target_include_directories(asiofi INTERFACE
-  $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
-  $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
+  # Define the library
+  add_library(asiofi INTERFACE)
+  target_link_libraries(asiofi
+    INTERFACE
+    Boost::boost
+    Threads::Threads
+    Boost::system
+    Boost::container
+    OFI::libfabric
+  )
+  target_include_directories(asiofi INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+  )
+endif()
 
 # Add fabtests
 if(BUILD_FABTESTS)
@@ -78,30 +78,34 @@ endif()
 
 
 # Package components ###########################################################
-list(APPEND PROJECT_PACKAGE_COMPONENTS bindings)
-if(BUILD_FABTESTS)
-  list(APPEND PROJECT_PACKAGE_COMPONENTS fabtests)
+if(BUILD_CORE)
+  list(APPEND PROJECT_PACKAGE_COMPONENTS core)
+endif()
+if(BUILD_TESTING)
+  list(APPEND PROJECT_PACKAGE_COMPONENTS tests)
 endif()
 ################################################################################
 
 
 # Installation #################################################################
-install(TARGETS asiofi
-  EXPORT ${asiofi_EXPORT_SET}
-  DESTINATION ${asiofi_INSTALL_LIBDIR}
-)
-install(DIRECTORY
-  include/${PROJECT_NAME_LOWER}
-  ${CMAKE_BINARY_DIR}/include/${PROJECT_NAME_LOWER}
+if(BUILD_CORE)
+  install(TARGETS asiofi
+    EXPORT ${asiofi_EXPORT_SET}
+    DESTINATION ${asiofi_INSTALL_LIBDIR}
+  )
+  install(DIRECTORY
+    include/${PROJECT_NAME_LOWER}
+    ${CMAKE_BINARY_DIR}/include/${PROJECT_NAME_LOWER}
 
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-  PATTERN *.in EXCLUDE
-)
-install(FILES include/asiofi.hpp
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    PATTERN *.in EXCLUDE
+  )
+  install(FILES include/asiofi.hpp
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
 
-install_asiofi_cmake_package()
+  install_asiofi_cmake_package()
+endif()
 ################################################################################
 
 
@@ -145,12 +149,17 @@ if(PROJECT_PACKAGE_DEPENDENCIES)
 endif()
 message(STATUS "  ")
 message(STATUS "  ${Cyan}COMPONENT  BUILT?  INFO${CR}")
-message(STATUS "  ${BWhite}bindings${CR}    ${BGreen}YES${CR}    (default, always built)")
-if(BUILD_FABTESTS)
-  set(fabtests_summary "${BGreen}YES${CR}    (disable with ${BMagenta}-DBUILD_FABTESTS=OFF${CR})")
+if(BUILD_CORE)
+  set(core_summary "${BGreen}YES${CR}")
 else()
-  set(fabtests_summary "${BRed} NO${CR}    (default, enable with ${BMagenta}-DBUILD_FABTESTS=ON${CR})")
+  set(core_summary "${BRed} NO${CR}")
 endif()
-message(STATUS "  ${BWhite}fabtests${CR}    ${fabtests_summary}")
+message(STATUS "  ${BWhite}core${CR}        ${core_summary}")
+if(BUILD_TESTING)
+  set(tests_summary "${BGreen}YES${CR}    (disable with ${BMagenta}-DBUILD_TESTING=OFF${CR})")
+else()
+  set(tests_summary "${BRed} NO${CR}    (default, enable with ${BMagenta}-DBUILD_TESTING=ON${CR})")
+endif()
+message(STATUS "  ${BWhite}tests${CR}       ${tests_summary}")
 message(STATUS "  ")
 ################################################################################
