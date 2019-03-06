@@ -29,6 +29,10 @@ option(BUILD_FABTESTS "Build fabtests." OFF)
 
 
 # Dependencies #################################################################
+set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
+set(THREADS_PREFER_PTHREAD_FLAG TRUE)
+find_package(Threads REQUIRED)
+
 find_package2(PUBLIC Boost VERSION 1.66 REQUIRED
   COMPONENTS system program_options container)
 find_package2(PUBLIC OFI VERSION 1.6.0 REQUIRED
@@ -53,7 +57,12 @@ configure_file(include/${PROJECT_NAME_LOWER}/version.hpp.in
 # Define the library
 add_library(asiofi INTERFACE)
 target_link_libraries(asiofi
-  INTERFACE Boost::boost Boost::system OFI::libfabric
+  INTERFACE
+  Boost::boost
+  Threads::Threads
+  Boost::system
+  Boost::container
+  OFI::libfabric
 )
 target_include_directories(asiofi INTERFACE
   $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
@@ -63,7 +72,7 @@ target_include_directories(asiofi INTERFACE
 
 # Add fabtests
 if(BUILD_FABTESTS)
-  add_subdirectory(fabtests)
+  add_subdirectory(test)
 endif()
 ################################################################################
 

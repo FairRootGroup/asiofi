@@ -13,16 +13,13 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
 #include <boost/program_options.hpp>
-#include <benchmark/benchmark.h>
 #include <chrono>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <memory>
 #include <string>
-#include <sys/mman.h>
 #include <vector>
-#include <malloc.h>
 
 namespace bpo = boost::program_options;
 
