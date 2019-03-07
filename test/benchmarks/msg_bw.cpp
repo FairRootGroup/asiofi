@@ -124,6 +124,7 @@ auto client(const std::string& address,
   asiofi::domain domain(fabric);
   asiofi::connected_endpoint endpoint(io_context, domain);
   endpoint.enable();
+  asiofi::semaphore sem(io_context, queue_size);
 
   // sockaddr_in sa;
   // (void)inet_pton(AF_INET, address.c_str(), &(sa.sin_addr));
@@ -133,7 +134,6 @@ auto client(const std::string& address,
   asiofi::allocated_pool_resource pool_mr;
   size_t received(0);
   size_t posted(0);
-  size_t queued(0);
   std::chrono::time_point<std::chrono::steady_clock> start;
   std::chrono::time_point<std::chrono::steady_clock> stop;
 
@@ -144,11 +144,8 @@ auto client(const std::string& address,
 
   auto recv_completion_handler = [&](boost::asio::mutable_buffer buffer) {
     ++received;
-    --queued;
+    sem.signal();
 
-    if (posted < iterations) {
-      boost::asio::post(io_context, post_recv_buffers);
-    }
     if (received == iterations) {
       stop = std::chrono::steady_clock::now();
       endpoint.shutdown();
@@ -160,14 +157,18 @@ auto client(const std::string& address,
   };
 
   post_recv_buffers = [&]() {
-    while (queued < queue_size && posted < iterations) {
-      if (posted == 0) {
-        start = std::chrono::steady_clock::now();
+    sem.async_wait([&](const boost::system::error_code& ec) {
+      if (!ec) {
+        if (posted == 0) {
+          start = std::chrono::steady_clock::now();
+        }
+        endpoint.recv(buffer, mr.desc(), recv_completion_handler);
+        ++posted;
+        if (posted < iterations) {
+          boost::asio::dispatch(io_context, post_recv_buffers);
+        }
       }
-      endpoint.recv(buffer, mr.desc(), recv_completion_handler);
-      ++posted;
-      ++queued;
-    }
+    });
   };
 
   auto connect_handler = [&](asiofi::eq::event e){
@@ -212,11 +213,11 @@ auto server(const std::string& address,
   asiofi::domain domain(fabric);
   asiofi::passive_endpoint pep(io_context, fabric);
   std::unique_ptr<asiofi::connected_endpoint> endpoint(nullptr);
+  asiofi::semaphore sem(io_context, queue_size);
 
   asiofi::allocated_pool_resource pool_mr;
   size_t sent(0);
   size_t posted(0);
-  size_t queued(0);
   std::chrono::time_point<std::chrono::steady_clock> start;
   std::chrono::time_point<std::chrono::steady_clock> stop;
 
@@ -226,19 +227,14 @@ auto server(const std::string& address,
   std::function<void()> post_send_buffers;
 
   auto send_completion_handler = [&](boost::asio::mutable_buffer buffer) {
-    // std::cout << "posted=" << posted << " sent=" << sent << " queued=" << queued << std::endl;
-    // std::cout << "enter send completion: buf=" << buffer.data() << " size=" << buffer.size() << std::endl;
     if (sent == 0) {
       start = std::chrono::steady_clock::now();
       sent = 0;
     }
     assert(buffer.size() == message_size);
     ++sent;
-    --queued;
-    if (posted < iterations) {
-      boost::asio::post(io_context, post_send_buffers);
-    }
-    // std::cout << "exit send completion" << std::endl;
+    sem.signal();
+
     if (sent == iterations) {
       stop = std::chrono::steady_clock::now();
       endpoint->shutdown();
@@ -250,14 +246,15 @@ auto server(const std::string& address,
   };
 
   post_send_buffers = [&]() {
-    // std::cout << "enter post_send_buffers" << std::endl;
-    // size_t at_start = queued;
-    while (queued < queue_size && posted < iterations) {
-      endpoint->send(buffer, mr.desc(), send_completion_handler);
-      ++posted;
-      ++queued;
-    } 
-    // std::cout << "exit post_send_buffers: posted " << (queued - at_start) << " new buffers, posted=" << posted << std::endl;
+    sem.async_wait([&](const boost::system::error_code& ec) {
+      if (!ec) {
+        endpoint->send(buffer, mr.desc(), send_completion_handler);
+        ++posted;
+        if (posted < iterations) {
+          boost::asio::dispatch(io_context, post_send_buffers);
+        }
+      }
+    });
   };
 
   auto accept_handler = [&]() {
