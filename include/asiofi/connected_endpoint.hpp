@@ -112,7 +112,7 @@ namespace asiofi {
                             "",   // TODO print addr
                             " on ofi connected_endpoint");
 
-      m_eq.read([&, _handler = std::move(handler)](eq::event event, info&& info) {
+      m_eq.async_read([&, _handler = std::move(handler)](eq::event event, info&& info) {
         switch (event) {
           case eq::event::connected:
           case eq::event::connrefused:
@@ -141,7 +141,7 @@ namespace asiofi {
       if (rc != FI_SUCCESS)
         throw runtime_error("Failed accepting connection, reason: ", fi_strerror(rc));
 
-      m_eq.read(
+      m_eq.async_read(
         [&, _handler = std::move(handler)](eq::event event, info&& info) {
           if (event == eq::event::connected) {
             _handler();
@@ -179,7 +179,7 @@ namespace asiofi {
       }
 
       auto ex = boost::asio::get_associated_executor(handler, m_io_context);
-      m_tx_cq.read(
+      m_tx_cq.async_read(
         boost::asio::bind_executor(
           ex, [=, handler2 = std::move(handler)]() mutable { handler2(buffer); }),
         std::move(ctx));
@@ -217,7 +217,7 @@ namespace asiofi {
       }
 
       auto ex = boost::asio::get_associated_executor(handler, m_io_context);
-      m_rx_cq.read(
+      m_rx_cq.async_read(
         boost::asio::bind_executor(
           ex, [=, handler2 = std::move(handler)]() mutable { handler2(buffer); }),
         std::move(ctx));

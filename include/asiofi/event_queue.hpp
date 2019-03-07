@@ -127,7 +127,7 @@ namespace asiofi
     };
 
     template<typename CompletionHandler>
-    auto read(CompletionHandler&& handler) -> void
+    auto async_read(CompletionHandler&& handler) -> void
     {
       auto wait_obj = &m_event_queue.get()->fid;
       auto rc = fi_trywait(get_wrapped_obj(m_fabric), &wait_obj, 1);

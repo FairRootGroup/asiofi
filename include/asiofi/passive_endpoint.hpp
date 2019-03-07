@@ -83,13 +83,17 @@ namespace asiofi
 	m_listening = true;
       }
 
-      m_eq.read([&, _handler = std::forward<CompletionHandler>(handler)](eq::event event, info&& info){
+      m_eq.async_read([&, _handler = std::forward<CompletionHandler>(handler)](
+                        eq::event event, info&& info) {
         if (event == eq::event::connreq) {
           _handler(std::move(info));
         } else {
           throw runtime_error("Unexpected event read from ofi event queue, ",
-                              "expected: ", static_cast<uint32_t>(eq::event::connreq), " (event::connreq), ",
-                              "got: ", static_cast<uint32_t>(event));
+                              "expected: ",
+                              static_cast<uint32_t>(eq::event::connreq),
+                              " (event::connreq), ",
+                              "got: ",
+                              static_cast<uint32_t>(event));
         }
       });
     }

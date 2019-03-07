@@ -65,7 +65,7 @@ namespace asiofi
     // };
 
     template<typename CompletionHandler>
-    auto read(CompletionHandler&& handler, std::unique_ptr<fi_context> ctx) -> void
+    auto async_read(CompletionHandler&& handler, std::unique_ptr<fi_context> ctx) -> void
     {
       m_read_handler_queue.push(
         detail::handler_queue::value_type(new detail::queued_handler<CompletionHandler>(
