@@ -10,110 +10,258 @@
 #define ASIOFI_SEMAPHORE_HPP
 
 #include <asiofi/errno.hpp>
-#include <atomic>
-#include <boost/asio/associated_executor.hpp>
-#include <boost/asio/bind_executor.hpp>
-#include <boost/asio/buffer.hpp>
 #include <boost/asio/io_context.hpp>
-#include <boost/asio/posix/stream_descriptor.hpp>
+#include <boost/asio/dispatch.hpp>
 #include <cassert>
+#include <condition_variable>
 #include <cstdint>
-#include <sys/eventfd.h>
+#include <functional>
+#include <mutex>
 
 namespace asiofi {
-
   /**
-   * @struct semaphore semaphore.hpp <asiofi/semaphore.hpp>
-   * @brief Implements a simple semaphore with asynchronous operations
+   * @struct unsynchronized_semaphore semaphore.hpp <asiofi/semaphore.hpp>
+   * @brief A simple asio-enabled semaphore
    *
-   * Asio-enabled semaphore. The Linux implementation is based on the eventfd(2) API.
+   * Semaphore:
+   * - Bounded [0,max]
+   * - NOT thread-safe
+   * - It is not supported to mix async_wait and wait calls
+   * - It is not supported to mix async_signal and signal calls
    */
-  struct semaphore
+  struct unsynchronized_semaphore
   {
-    explicit semaphore(boost::asio::io_context& ioc, uint64_t initial_value = 1)
+    explicit unsynchronized_semaphore(boost::asio::io_context& ioc,
+                                      std::size_t max_value = 1)
       : m_io_context(ioc)
-      , m_descriptor(m_io_context, create_eventfd(initial_value))
-      , m_read_buffer(0)
-      , m_signal_buffer(0)
-      , m_cnt(initial_value)
+      , m_count(max_value)
+      , m_max(max_value)
+      , m_handler(nullptr)
     {}
 
     template<typename CompletionHandler>
     auto async_wait(CompletionHandler&& handler) -> void
     {
-      boost::asio::mutable_buffer mb(&m_read_buffer, 8);
-      auto ex = boost::asio::get_associated_executor(handler, m_io_context);
-
-      m_descriptor.async_read_some(
-        mb,
-        boost::asio::bind_executor(
-          ex,
-          [&, handler_ = std::move(handler)](const boost::system::error_code& ec,
-                                             size_t bytes_read) {
-            if (!ec) {
-              assert(bytes_read == 8);
-              (void)bytes_read;
-              assert(static_cast<uint64_t>(mb.data()) == 1);
-              --m_cnt;
-            }
-            handler_(ec);
-          }));
+      if (m_handler) {
+        // complete the waiting signal operation, then complete this operation
+        boost::asio::dispatch(m_io_context,
+                              [waiting_completion = std::move(m_handler),
+                               current_completion = std::move(handler)]() mutable {
+                                current_completion();
+                                waiting_completion();
+                              });
+      } else if (m_count > 0) {
+        --m_count;
+        boost::asio::dispatch(m_io_context, std::move(handler));
+      } else {
+        if (!m_handler) {
+          m_handler = std::function<void()>(std::move(handler));
+        } else {
+          throw runtime_error(
+            "Cannot initiate semaphore::async_wait twice at the same time.");
+        }
+      }
     }
 
     auto wait() -> void
     {
-      boost::asio::mutable_buffer mb(&m_read_buffer, 8);
-
-      m_descriptor.read_some(mb);
+      if (m_handler) {
+        boost::asio::dispatch(m_io_context, std::move(m_handler));
+      } else if (m_count > 0) {
+        --m_count;
+      } else {
+        throw runtime_error("Cannot wait on semaphore, its value is 0.");
+      }
     }
 
     template<typename CompletionHandler>
     auto async_signal(CompletionHandler&& handler) -> void
     {
-      m_signal_buffer = 1;
-      boost::asio::const_buffer cb(&m_signal_buffer, 8);
-      auto ex = boost::asio::get_associated_executor(handler, m_io_context);
-
-      m_descriptor.async_write_some(
-        cb,
-        boost::asio::bind_executor(
-          ex,
-          [&, handler_ = std::move(handler)](const boost::system::error_code& ec,
-                                             size_t bytes_written) {
-            if (!ec) {
-              assert(bytes_written == 8);
-              (void)bytes_written;
-              ++m_cnt;
-            }
-            handler_(ec);
-          }));
+      if (m_handler) {
+        // complete the waiting wait operation, then complete this operation
+        boost::asio::dispatch(m_io_context,
+                              [waiting_completion = std::move(m_handler),
+                               current_completion = std::move(handler)]() mutable {
+                                current_completion();
+                                waiting_completion();
+                              });
+      } else if (m_count < m_max) {
+        ++m_count;
+        boost::asio::dispatch(m_io_context, std::move(handler));
+      } else {
+        if (!m_handler) {
+          m_handler = std::function<void()>(std::move(handler));
+        } else {
+          throw runtime_error(
+            "Cannot initiate semaphore::async_wait twice at the same time.");
+        }
+      }
     }
 
     auto signal() -> void
     {
-      m_signal_buffer = 1;
-      boost::asio::const_buffer cb(&m_signal_buffer, 8);
-
-      m_descriptor.write_some(cb);
+      if (m_handler) {
+        boost::asio::dispatch(m_io_context, std::move(m_handler));
+      } else if (m_count < m_max) {
+        ++m_count;
+      } else {
+        throw runtime_error(
+          "Cannot signal on semaphore, its value is at max (", m_max, ").");
+      }
     }
 
-    auto get_value() -> uint64_t { return m_cnt; }
+    auto get_value() -> std::size_t
+    {
+      std::unique_lock<std::mutex> lk(m_mutex);
+      return m_count;
+    }
 
   private:
     boost::asio::io_context& m_io_context;
-    boost::asio::posix::stream_descriptor m_descriptor;
-    uint64_t m_read_buffer, m_signal_buffer;
-    std::atomic<uint64_t> m_cnt;
+    std::size_t m_count;
+    const std::size_t m_max;
+    std::function<void()> m_handler;
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+  };
 
-    auto create_eventfd(uint64_t initial_value) -> int {
-      int ret = eventfd(initial_value, EFD_SEMAPHORE);
-      if(ret == -1) {
-        throw runtime_error("Could not create eventfd(2)");
+  /**
+   * @struct synchronized_semaphore semaphore.hpp <asiofi/semaphore.hpp>
+   * @brief A simple asio-enabled semaphore
+   *
+   * Semaphore:
+   * - Bounded [0,max]
+   * - thread-safe
+   * - It is not supported to mix async_wait and wait calls
+   * - It is not supported to mix async_signal and signal calls
+   */
+  struct synchronized_semaphore
+  {
+    explicit synchronized_semaphore(boost::asio::io_context& ioc,
+                                    std::size_t initial_value = 1)
+      : m_io_context(ioc)
+      , m_count(initial_value)
+      , m_max(initial_value)
+      , m_handler(nullptr)
+    {}
+
+    template<typename CompletionHandler>
+    auto async_wait(CompletionHandler&& handler) -> void
+    {
+      std::unique_lock<std::mutex> lk(m_mutex);
+
+      if (m_handler) {
+        auto waiting = std::move(m_handler);
+        lk.unlock();
+        // complete the waiting signal operation, then complete this operation
+        boost::asio::dispatch(m_io_context,
+                              [waiting_completion = std::move(waiting),
+                               current_completion = std::move(handler)]() mutable {
+                                waiting_completion();
+                                current_completion();
+                              });
+      } else if (m_count > 0) {
+        --m_count;
+        lk.unlock();
+        m_cv.notify_one();
+        boost::asio::dispatch(m_io_context, std::move(handler));
+      } else {
+        if (!m_handler) {
+          m_handler = std::function<void()>(std::move(handler));
+        } else {
+          throw runtime_error(
+            "Cannot initiate semaphore::async_wait twice at the same time.");
+        }
+      }
+    }
+
+    auto wait() -> void
+    {
+      std::unique_lock<std::mutex> lk(m_mutex);
+
+      if (m_count == 0) {
+        m_cv.wait(lk, [this] { return m_count > 0; });
       }
 
-      return ret;
+      --m_count;
+
+      if (m_handler) {
+        auto handler = std::move(m_handler);
+        m_handler = nullptr;   // needed?
+        lk.unlock();
+        boost::asio::dispatch(m_io_context, std::move(m_handler));
+      } else {
+        lk.unlock();
+        m_cv.notify_one();
+      }
     }
+
+    template<typename CompletionHandler>
+    auto async_signal(CompletionHandler&& handler) -> void
+    {
+      std::unique_lock<std::mutex> lk(m_mutex);
+
+      if (m_handler) {
+        auto waiting = std::move(m_handler);
+        lk.unlock();
+        // complete the waiting wait operation, then complete this operation
+        boost::asio::dispatch(m_io_context,
+                              [waiting_completion = std::move(waiting),
+                               current_completion = std::move(handler)]() mutable {
+                                waiting_completion();
+                                current_completion();
+                              });
+      } else if (m_count < m_max) {
+        ++m_count;
+        lk.unlock();
+        m_cv.notify_one();
+        boost::asio::dispatch(m_io_context, std::move(handler));
+      } else {
+        if (!m_handler) {
+          m_handler = std::function<void()>(std::move(handler));
+        } else {
+          throw runtime_error(
+            "Cannot initiate semaphore::async_signal twice at the same time.");
+        }
+      }
+    }
+
+    auto signal() -> void
+    {
+      std::unique_lock<std::mutex> lk(m_mutex);
+
+      if (m_count == m_max) {
+        m_cv.wait(lk, [this] { return m_count < m_max; });
+      }
+
+      ++m_count;
+
+      if (m_handler) {
+        auto handler = std::move(m_handler);
+        m_handler = nullptr;   // needed?
+        lk.unlock();
+        boost::asio::dispatch(m_io_context, std::move(m_handler));
+      } else {
+        lk.unlock();
+        m_cv.notify_one();
+      }
+    }
+
+    auto get_value() -> std::size_t
+    {
+      std::unique_lock<std::mutex> lk(m_mutex);
+      return m_count;
+    }
+
+  private:
+    boost::asio::io_context& m_io_context;
+    std::size_t m_count;
+    const std::size_t m_max;
+    std::function<void()> m_handler;
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
   };
+
 }   // namespace asiofi
 
 #endif /* ifndef ASIOFI_SEMAPHORE_HPP */  

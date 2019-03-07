@@ -124,7 +124,7 @@ auto client(const std::string& address,
   asiofi::domain domain(fabric);
   asiofi::connected_endpoint endpoint(io_context, domain);
   endpoint.enable();
-  asiofi::semaphore sem(io_context, queue_size);
+  asiofi::unsynchronized_semaphore sem(io_context, queue_size);
 
   // sockaddr_in sa;
   // (void)inet_pton(AF_INET, address.c_str(), &(sa.sin_addr));
@@ -157,16 +157,14 @@ auto client(const std::string& address,
   };
 
   post_recv_buffers = [&]() {
-    sem.async_wait([&](const boost::system::error_code& ec) {
-      if (!ec) {
-        if (posted == 0) {
-          start = std::chrono::steady_clock::now();
-        }
-        endpoint.recv(buffer, mr.desc(), recv_completion_handler);
-        ++posted;
-        if (posted < iterations) {
-          boost::asio::dispatch(io_context, post_recv_buffers);
-        }
+    sem.async_wait([&]() {
+      if (posted == 0) {
+        start = std::chrono::steady_clock::now();
+      }
+      endpoint.recv(buffer, mr.desc(), recv_completion_handler);
+      ++posted;
+      if (posted < iterations) {
+        boost::asio::dispatch(io_context, post_recv_buffers);
       }
     });
   };
@@ -213,7 +211,7 @@ auto server(const std::string& address,
   asiofi::domain domain(fabric);
   asiofi::passive_endpoint pep(io_context, fabric);
   std::unique_ptr<asiofi::connected_endpoint> endpoint(nullptr);
-  asiofi::semaphore sem(io_context, queue_size);
+  asiofi::unsynchronized_semaphore sem(io_context, queue_size);
 
   asiofi::allocated_pool_resource pool_mr;
   size_t sent(0);
@@ -246,13 +244,11 @@ auto server(const std::string& address,
   };
 
   post_send_buffers = [&]() {
-    sem.async_wait([&](const boost::system::error_code& ec) {
-      if (!ec) {
-        endpoint->send(buffer, mr.desc(), send_completion_handler);
-        ++posted;
-        if (posted < iterations) {
-          boost::asio::dispatch(io_context, post_send_buffers);
-        }
+    sem.async_wait([&]() {
+      endpoint->send(buffer, mr.desc(), send_completion_handler);
+      ++posted;
+      if (posted < iterations) {
+        boost::asio::dispatch(io_context, post_send_buffers);
       }
     });
   };
