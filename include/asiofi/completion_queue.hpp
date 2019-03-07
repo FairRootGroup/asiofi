@@ -143,9 +143,9 @@ namespace asiofi
         // struct fi_cq_entry {
         // void     *op_context; [> operation context <]
         // };
-        fi_cq_entry entry[64];
+        fi_cq_entry entry[1];
         ssize_t rc;
-        while ((rc = fi_cq_read(m_completion_queue.get(), &entry, 64)) != -FI_EAGAIN) {
+        while ((rc = fi_cq_read(m_completion_queue.get(), &entry, 1)) != -FI_EAGAIN) {
           if (rc == -FI_EAVAIL) {
             reader_handle_error();
           } else if (rc < 0) {
