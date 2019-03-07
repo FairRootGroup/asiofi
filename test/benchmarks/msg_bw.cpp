@@ -75,6 +75,24 @@ catch (const bpo::error& ex)
   std::exit(EXIT_FAILURE);
 }
 
+auto print_statistics(size_t message_size, size_t iterations, double elapsed_ms) -> void
+{
+  auto rate_MiB = (iterations * message_size * 1000.) / (1024. * 1024. * elapsed_ms);
+  auto rate_MB = (iterations * message_size * 1000.) / (1000. * 1000. * elapsed_ms);
+  auto rate_Gb =
+    (iterations * message_size * 1000. * 8.) / (1000. * 1000. * 1000. * elapsed_ms);
+  auto sent_B = (iterations * message_size);
+  auto sent_MB = sent_B / (1000. * 1000.);
+  auto message_rate = (sent_B / message_size) * (1000. / elapsed_ms);
+  std::cout << "  message size: " << message_size << " Bytes" << std::endl;
+  std::cout << "    iterations: " << iterations << std::endl;
+  std::cout << "  elapsed time: " << elapsed_ms << " ms" << std::endl;
+  std::cout << "     data sent: " << sent_MB << " MB  " << sent_B << " Bytes" << std::endl;
+  std::cout << "bandwidth used: " << rate_Gb << " Gb/s  " << rate_MiB << " MiB/s  "
+            << rate_MB << " MB/s" << std::endl;
+  std::cout << "  message rate: " << message_rate << " msg/s" << std::endl;
+}
+
 auto client(const std::string& address,
             const std::string& port,
             const std::string& provider,
@@ -135,11 +153,9 @@ auto client(const std::string& address,
       stop = std::chrono::steady_clock::now();
       endpoint.shutdown();
       signals.cancel();
-      auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
-      auto rate_MiB = (iterations * message_size * 1000.) / (1024. * 1024. * elapsed_ms);
-      auto rate_MB = (iterations * message_size * 1000.) / (1000. * 1000. * elapsed_ms);
-      std::cout << "elapsed time: " << elapsed_ms << " ms  data sent: " <<  (iterations * message_size) << " Bytes" << std::endl; 
-      std::cout << "bandwidth used: " << rate_MiB << " MiB/s  " << rate_MB << " MB/s" << std::endl;
+      auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
+      print_statistics(message_size, iterations, elapsed_ms);
     }
   };
 
@@ -227,11 +243,9 @@ auto server(const std::string& address,
       stop = std::chrono::steady_clock::now();
       endpoint->shutdown();
       signals.cancel();
-      auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
-      auto rate_MiB = (iterations * message_size * 1000.) / (1024. * 1024. * elapsed_ms);
-      auto rate_MB = (iterations * message_size * 1000.) / (1000. * 1000. * elapsed_ms);
-      std::cout << "elapsed time: " << elapsed_ms << " ms  data sent: " <<  (iterations * message_size) << " Bytes" << std::endl; 
-      std::cout << "bandwidth used: " << rate_MiB << " MiB/s  " << rate_MB << " MB/s" << std::endl;
+      auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
+      print_statistics(message_size, iterations, elapsed_ms);
     }
   };
 
