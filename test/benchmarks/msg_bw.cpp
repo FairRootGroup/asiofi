@@ -18,6 +18,7 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -156,6 +157,8 @@ auto client(const std::string& address,
   auto connect_handler = [&](asiofi::eq::event e){
     if (e == asiofi::eq::event::connected) {
       post_recv_buffers();
+    } else {
+      throw std::runtime_error("Connection refused");
     }
   };
 
