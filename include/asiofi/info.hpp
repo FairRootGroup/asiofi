@@ -97,6 +97,18 @@ namespace asiofi
       m_info->dest_addrlen = sizeof(sockaddr_in);
     }
 
+    auto set_source(const std::string& address, const std::string& port) -> void
+    {
+      // TODO check addr format field
+      sockaddr_in* sa(new sockaddr_in());
+      (void)inet_pton(AF_INET, address.c_str(), &(sa->sin_addr));
+      sa->sin_port = htons(std::stoi(port));
+      sa->sin_family = AF_INET;
+
+      m_info->src_addr = sa;
+      m_info->src_addrlen = sizeof(sockaddr_in);
+    }
+
     protected:
     fi_info* m_info; // TODO use smart pointer
 

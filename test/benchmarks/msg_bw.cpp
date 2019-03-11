@@ -93,7 +93,8 @@ auto print_statistics(size_t message_size, size_t iterations, double elapsed_ms)
   std::cout << "  message rate: " << message_rate << " msg/s" << std::endl;
 }
 
-auto client(const std::string& address,
+auto msg_bw(const bool is_server,
+            const std::string& address,
             const std::string& port,
             const std::string& provider,
             const std::string& domain_str,
@@ -116,23 +117,24 @@ auto client(const std::string& address,
   hints.set_provider(provider);
   if (domain_str.length() > 0) hints.set_domain(domain_str);
   // std::cout << hints << std::endl;
-  // asiofi::info info(address.c_str(), port.c_str(), 0, hints);
-  asiofi::info info(hints);
-  info.set_destination(address, port);
+  std::unique_ptr<asiofi::info> info(nullptr);
+  if (is_server) {
+    info = make_unique<asiofi::info>(address.c_str(), port.c_str(), FI_SOURCE, hints);
+    info->set_source(address, port);
+  } else {
+    //info = make_unique<asiofi::info>(address.c_str(), port.c_str(), 0, hints);
+    info = make_unique<asiofi::info>(hints);
+    info->set_destination(address, port);
+  }
   // std::cout << info << std::endl;
-  asiofi::fabric fabric(info);
+  asiofi::fabric fabric(*info);
   asiofi::domain domain(fabric);
-  asiofi::connected_endpoint endpoint(io_context, domain);
-  endpoint.enable();
+  std::unique_ptr<asiofi::passive_endpoint> pep(nullptr);
+  std::unique_ptr<asiofi::connected_endpoint> endpoint(nullptr);
   asiofi::unsynchronized_semaphore sem(io_context, queue_size);
 
-  // sockaddr_in sa;
-  // (void)inet_pton(AF_INET, address.c_str(), &(sa.sin_addr));
-  // sa.sin_port = htons(std::stoi(port));
-  // sa.sin_family = AF_INET;
-
   asiofi::allocated_pool_resource pool_mr;
-  size_t received(0);
+  size_t completed(0);
   size_t posted(0);
   std::chrono::time_point<std::chrono::steady_clock> start;
   std::chrono::time_point<std::chrono::steady_clock> stop;
@@ -140,130 +142,91 @@ auto client(const std::string& address,
   boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
   asiofi::memory_region mr(domain, buffer, asiofi::mr::access::recv);
 
-  std::function<void()> post_recv_buffers;
+  std::function<void()> post_buffers;
 
-  auto recv_completion_handler = [&](boost::asio::mutable_buffer buffer) {
-    ++received;
-    sem.signal();
+  if (is_server) {
+  ////////////////////////
+  // SERVER
 
-    if (received == iterations) {
-      stop = std::chrono::steady_clock::now();
-      endpoint.shutdown();
-      signals.cancel();
-      auto elapsed_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
-      print_statistics(message_size, iterations, elapsed_ms);
-    }
-  };
+    post_buffers = [&]() {
+      sem.async_wait([&]() {
+        endpoint->send(buffer, mr.desc(), [&](boost::asio::mutable_buffer buffer) {
+          if (completed == 0) {
+            start = std::chrono::steady_clock::now();
+          }
+          assert(buffer.size() == message_size);
+          ++completed;
+          sem.signal();
 
-  post_recv_buffers = [&]() {
-    sem.async_wait([&]() {
-      if (posted == 0) {
-        start = std::chrono::steady_clock::now();
-      }
-      endpoint.recv(buffer, mr.desc(), recv_completion_handler);
-      ++posted;
-      if (posted < iterations) {
-        boost::asio::dispatch(io_context, post_recv_buffers);
-      }
+          if (completed == iterations) {
+            stop = std::chrono::steady_clock::now();
+            endpoint->shutdown();
+            signals.cancel();
+            auto elapsed_ms =
+              std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
+            print_statistics(message_size, iterations, elapsed_ms);
+          }
+        });
+        ++posted;
+        if (posted < iterations) {
+          boost::asio::dispatch(io_context, post_buffers);
+        }
+      });
+    };
+
+    pep = make_unique<asiofi::passive_endpoint>(io_context, fabric);
+    pep->listen([&](asiofi::info&& info) {
+      endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain, info);
+      endpoint->enable();
+      endpoint->accept([&]() { 
+          post_buffers(); });
     });
-  };
 
-  auto connect_handler = [&](asiofi::eq::event e){
-    if (e == asiofi::eq::event::connected) {
-      post_recv_buffers();
-    } else {
-      throw std::runtime_error("Connection refused");
-    }
-  };
+  //
+  ////////////////////////
+  } else {
+  ////////////////////////
+  // CLIENT
 
-  endpoint.connect(connect_handler);
-  io_context.run();
+    post_buffers = [&]() {
+      sem.async_wait([&]() {
+        if (posted == 0) {
+          start = std::chrono::steady_clock::now();
+        }
+        endpoint->recv(buffer, mr.desc(), [&](boost::asio::mutable_buffer buffer) {
+          ++completed;
+          sem.signal();
 
-  return EXIT_SUCCESS;
-}
+          if (completed == iterations) {
+            stop = std::chrono::steady_clock::now();
+            endpoint->shutdown();
+            signals.cancel();
+            auto elapsed_ms =
+              std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
+            print_statistics(message_size, iterations, elapsed_ms);
+          }
+        });
+        ++posted;
+        if (posted < iterations) {
+          boost::asio::dispatch(io_context, post_buffers);
+        }
+      });
+    };
 
-auto server(const std::string& address,
-            const std::string& port,
-            const std::string& provider,
-            const std::string& domain_str,
-            size_t message_size,
-            size_t iterations,
-            size_t queue_size) -> int
-{
-  boost::asio::io_context io_context;
-  
-  boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
-  signals.async_wait([&](const boost::system::error_code& error, int signal_number) {
-    if (error && error != boost::asio::error::operation_aborted) {
-      std::cerr << "Signal handler: Received error code " << error << std::endl;
-    } else {
-      io_context.stop();
-    }
-  });
-
-  asiofi::hints hints;
-  hints.set_provider(provider);
-  if (domain_str.length() > 0) hints.set_domain(domain_str);
-  asiofi::info info(address.c_str(), port.c_str(), FI_SOURCE, hints);
-  // std::cout << info << std::endl;
-  asiofi::fabric fabric(info);
-  asiofi::domain domain(fabric);
-  asiofi::passive_endpoint pep(io_context, fabric);
-  std::unique_ptr<asiofi::connected_endpoint> endpoint(nullptr);
-  asiofi::unsynchronized_semaphore sem(io_context, queue_size);
-
-  asiofi::allocated_pool_resource pool_mr;
-  size_t sent(0);
-  size_t posted(0);
-  std::chrono::time_point<std::chrono::steady_clock> start;
-  std::chrono::time_point<std::chrono::steady_clock> stop;
-
-  boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
-  asiofi::memory_region mr(domain, buffer, asiofi::mr::access::send);
-
-  std::function<void()> post_send_buffers;
-
-  auto send_completion_handler = [&](boost::asio::mutable_buffer buffer) {
-    if (sent == 0) {
-      start = std::chrono::steady_clock::now();
-      sent = 0;
-    }
-    assert(buffer.size() == message_size);
-    ++sent;
-    sem.signal();
-
-    if (sent == iterations) {
-      stop = std::chrono::steady_clock::now();
-      endpoint->shutdown();
-      signals.cancel();
-      auto elapsed_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
-      print_statistics(message_size, iterations, elapsed_ms);
-    }
-  };
-
-  post_send_buffers = [&]() {
-    sem.async_wait([&]() {
-      endpoint->send(buffer, mr.desc(), send_completion_handler);
-      ++posted;
-      if (posted < iterations) {
-        boost::asio::dispatch(io_context, post_send_buffers);
-      }
-    });
-  };
-
-  auto accept_handler = [&]() {
-    post_send_buffers();
-  };
-
-  auto listen_handler = [&](asiofi::info&& info) {
-    endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain, info);
+    endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain);
     endpoint->enable();
-    endpoint->accept(accept_handler);
-  };
+    endpoint->connect([&](asiofi::eq::event e) {
+      if (e == asiofi::eq::event::connected) {
+        post_buffers();
+      } else {
+        throw std::runtime_error("Connection refused");
+      }
+    });
 
-  pep.listen(listen_handler);
+  //
+  ////////////////////////
+  }
+
   io_context.run();
 
   return EXIT_SUCCESS;
@@ -274,21 +237,12 @@ auto main(int argc, char** argv) -> int
   bpo::variables_map vm;
   handle_cli(argc, argv, vm);
 
-  if (vm.count("server")) {
-    return server(vm["host"].as<std::string>(),
-                  vm["port"].as<std::string>(),
-                  vm["provider"].as<std::string>(),
-                  vm["domain"].as<std::string>(),
-                  vm["message-size"].as<size_t>(),
-                  vm["iterations"].as<size_t>(),
-                  vm["queue-size"].as<size_t>());
-  } else {
-    return client(vm["host"].as<std::string>(),
-                  vm["port"].as<std::string>(),
-                  vm["provider"].as<std::string>(),
-                  vm["domain"].as<std::string>(),
-                  vm["message-size"].as<size_t>(),
-                  vm["iterations"].as<size_t>(),
-                  vm["queue-size"].as<size_t>());
-  }
+  return msg_bw(vm.count("server"),
+                vm["host"].as<std::string>(),
+                vm["port"].as<std::string>(),
+                vm["provider"].as<std::string>(),
+                vm["domain"].as<std::string>(),
+                vm["message-size"].as<size_t>(),
+                vm["iterations"].as<size_t>(),
+                vm["queue-size"].as<size_t>());
 }
