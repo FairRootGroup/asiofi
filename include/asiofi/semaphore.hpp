@@ -179,20 +179,18 @@ namespace asiofi {
     {
       std::unique_lock<std::mutex> lk(m_mutex);
 
-      if (m_count == 0) {
-        m_cv.wait(lk, [this] { return m_count > 0; });
-      }
-
-      --m_count;
-
       if (m_handler) {
-        auto handler = std::move(m_handler);
-        m_handler = nullptr;   // needed?
+        auto waiting = std::move(m_handler);
         lk.unlock();
-        boost::asio::dispatch(m_io_context, std::move(m_handler));
-      } else {
+        // complete the waiting signal operation
+        boost::asio::dispatch(m_io_context, std::move(waiting));
+      } else if (m_count > 0) {
+        --m_count;
         lk.unlock();
         m_cv.notify_one();
+      } else {
+        m_cv.wait(lk, [this] { return m_count > 0; });
+        --m_count;
       }
     }
 
@@ -230,20 +228,18 @@ namespace asiofi {
     {
       std::unique_lock<std::mutex> lk(m_mutex);
 
-      if (m_count == m_max) {
-        m_cv.wait(lk, [this] { return m_count < m_max; });
-      }
-
-      ++m_count;
-
       if (m_handler) {
-        auto handler = std::move(m_handler);
-        m_handler = nullptr;   // needed?
+        auto waiting = std::move(m_handler);
         lk.unlock();
-        boost::asio::dispatch(m_io_context, std::move(m_handler));
-      } else {
+        // complete the waiting signal operation
+        boost::asio::dispatch(m_io_context, std::move(waiting));
+      } else if (m_count < m_max) {
+        ++m_count;
         lk.unlock();
         m_cv.notify_one();
+      } else {
+        m_cv.wait(lk, [this] { return m_count < m_max; });
+        ++m_count;
       }
     }
 
