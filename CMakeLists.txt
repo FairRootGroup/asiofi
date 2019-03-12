@@ -59,7 +59,6 @@ if(BUILD_CORE)
     INTERFACE
     Boost::boost
     Threads::Threads
-    Boost::system
     Boost::container
     OFI::libfabric
   )
@@ -68,6 +67,7 @@ if(BUILD_CORE)
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:include>
   )
+  target_compile_definitions(asiofi INTERFACE BOOST_ERROR_CODE_HEADER_ONLY)
 endif()
 
 # Add fabtests
