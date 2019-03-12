@@ -186,7 +186,7 @@ auto msg_bw(const bool is_server,
             }
           });
 
-          boost::asio::post(io_context, post_buffers);
+          boost::asio::dispatch(io_context, post_buffers);
         });
       };
 
