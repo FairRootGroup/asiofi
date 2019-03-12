@@ -71,7 +71,7 @@ if(BUILD_CORE)
 endif()
 
 # Add fabtests
-if(BUILD_FABTESTS)
+if(BUILD_TESTING)
   add_subdirectory(test)
 endif()
 ################################################################################
