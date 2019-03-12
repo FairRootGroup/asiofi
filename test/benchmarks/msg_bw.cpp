@@ -192,6 +192,8 @@ auto msg_bw(const bool is_server,
 
       //
       ////////////////////////
+    } else {
+      throw std::runtime_error("--mt not yet implemented for client");
     }
 
     std::thread thread([&] { io_context.run(); });
