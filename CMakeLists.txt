@@ -68,6 +68,15 @@ if(BUILD_CORE)
     $<INSTALL_INTERFACE:include>
   )
   target_compile_definitions(asiofi INTERFACE BOOST_ERROR_CODE_HEADER_ONLY)
+
+  # workaround https://github.com/boostorg/asio/commit/43874d5497414c67655d901e48c939ef01337edb
+  if (    ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
+      AND ("${CMAKE_CXX_COMPILER_VERSION}" VERSION_GREATER "10.0.0"))
+    if ("${Boost_VERSION}" VERSION_LESS "106900")
+      target_compile_definitions(asiofi INTERFACE
+        BOOST_ASIO_HAS_STD_STRING_VIEW)
+    endif()
+  endif()
 endif()
 
 # Add fabtests
