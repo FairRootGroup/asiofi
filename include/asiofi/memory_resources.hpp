@@ -119,7 +119,7 @@ struct registered_memory_resource : boost::container::pmr::memory_resource
     return m_upstream.deallocate(p, bytes, alignment);
   }
 
-  auto do_is_equal(const memory_resource& other) const noexcept -> bool
+  auto do_is_equal(const memory_resource& other) const noexcept -> bool override
   {
     return m_upstream.is_equal(other);
   }
