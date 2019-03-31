@@ -23,5 +23,6 @@
 #include <asiofi/semaphore.hpp>
 #include <asiofi/unconnected_endpoint.hpp>
 #include <asiofi/version.hpp>
+#include <asiofi/waitset.hpp>
 
 #endif /* ASIOFI_HPP */
