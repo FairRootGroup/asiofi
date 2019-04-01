@@ -47,7 +47,8 @@ try {
     ("message-size,m", bpo::value<size_t>()->default_value(1024*1024), "Message size in Byte")
     ("iterations,i", bpo::value<size_t>()->default_value(100), "Number of messages to transfer")
     ("queue-size,q", bpo::value<size_t>()->default_value(10), "Maximum number of transfers to queue in parallel")
-    ("mt", "Multi-threaded mode");
+    ("mt", "Multi-threaded mode")
+    ("ctrl", "Emulate a control band");
   
   bpo::options_description hidden;
   hidden.add_options()
@@ -80,8 +81,14 @@ catch (const bpo::error& ex)
   std::exit(EXIT_FAILURE);
 }
 
-auto print_statistics(size_t message_size, size_t iterations, double elapsed_ms) -> void
+auto
+  print_statistics(size_t message_size,
+                   size_t iterations,
+                   std::chrono::time_point<std::chrono::steady_clock> start,
+                   std::chrono::time_point<std::chrono::steady_clock> stop) -> void
 {
+  auto elapsed_ms =
+    std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
   auto rate_MiB = (iterations * message_size * 1000.) / (1024. * 1024. * elapsed_ms);
   auto rate_MB = (iterations * message_size * 1000.) / (1000. * 1000. * elapsed_ms);
   auto rate_Gb =
@@ -106,7 +113,8 @@ auto msg_bw(const bool is_server,
             size_t message_size,
             size_t iterations,
             size_t queue_size,
-            const bool is_multi_threaded) -> int
+            const bool is_multi_threaded,
+            const bool emulate_control_band) -> int
 {
   boost::asio::io_context io_context;
   boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
@@ -132,35 +140,34 @@ auto msg_bw(const bool is_server,
   asiofi::domain domain(fabric);
   std::unique_ptr<asiofi::passive_endpoint> pep(nullptr);
   std::unique_ptr<asiofi::connected_endpoint> endpoint(nullptr);
+  std::unique_ptr<asiofi::connected_endpoint> ctrl_endpoint(nullptr);
 
-  asiofi::allocated_pool_resource pool_mr;
   size_t completed(0);
   size_t initiated(0);
   std::chrono::time_point<std::chrono::steady_clock> start;
   std::chrono::time_point<std::chrono::steady_clock> stop;
 
-  boost::asio::mutable_buffer buffer(pool_mr.allocate(message_size), message_size);
-  asiofi::memory_region mr(domain, buffer, asiofi::mr::access::recv);
+  asiofi::registered_memory_resource pmr(domain, message_size + 1024);
+  const auto desc = pmr.get_region().desc();
+  boost::asio::mutable_buffer buffer(pmr.allocate(message_size), message_size);
+  boost::asio::mutable_buffer ctrl_buffer(pmr.allocate(1024), 1024);
 
   std::function<void()> post_buffers;
+  std::function<void()> mt_main_thread;
 
-  if (is_multi_threaded) {
-    asiofi::synchronized_semaphore queue_push(io_context, queue_size);
-    asiofi::synchronized_semaphore queue_pop(io_context, 0);
-    std::mutex queue_mtx;
-    std::queue<boost::asio::mutable_buffer> queue;
+  asiofi::unsynchronized_semaphore sem(io_context, queue_size);
 
-    if (is_server) {
-      ////////////////////////
-      // MT SERVER
+  asiofi::synchronized_semaphore queue_push(io_context, queue_size);
+  asiofi::synchronized_semaphore queue_pop(io_context, 0);
+  std::mutex queue_mtx;
+  std::queue<boost::asio::mutable_buffer> queue;
 
-      pep = make_unique<asiofi::passive_endpoint>(io_context, fabric);
-      pep->listen([&](asiofi::info&& info) {
-        endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain, info);
-        endpoint->enable();
-        endpoint->accept([&] { boost::asio::dispatch(io_context, post_buffers); });
-      });
-
+  if (is_server) {
+      std::cout << "SERVER" << std::endl;
+    if (is_multi_threaded) {
+      std::cout << "MT" << std::endl;
+    ////////////////////////
+    // MT SERVER
       post_buffers = [&] {
         queue_pop.async_wait([&] {
           std::unique_lock<std::mutex> lk(queue_mtx);
@@ -168,7 +175,11 @@ auto msg_bw(const bool is_server,
           queue.pop();
           lk.unlock();
 
-          endpoint->send(buffer2, mr.desc(), [&](boost::asio::mutable_buffer buffer3) {
+          if (emulate_control_band) {
+            ctrl_endpoint->send(ctrl_buffer, desc, [](boost::asio::mutable_buffer){});
+          }
+
+          endpoint->send(buffer2, desc, [&](boost::asio::mutable_buffer buffer3) {
             if (completed == 0) {
               start = std::chrono::steady_clock::now();
             }
@@ -179,10 +190,7 @@ auto msg_bw(const bool is_server,
               stop = std::chrono::steady_clock::now();
               endpoint->shutdown();
               signals.cancel();
-              auto elapsed_ms =
-                std::chrono::duration_cast<std::chrono::milliseconds>(stop - start)
-                  .count();
-              print_statistics(message_size, iterations, elapsed_ms);
+              print_statistics(message_size, iterations, start, stop);
             }
           });
 
@@ -190,35 +198,30 @@ auto msg_bw(const bool is_server,
         });
       };
 
-      //
-      ////////////////////////
+      mt_main_thread = [&] {
+        while (initiated < iterations) {
+          queue_push.wait();
+          {
+            std::unique_lock<std::mutex> lk(queue_mtx);
+            queue.push(buffer);
+          }
+          queue_pop.signal();
+          ++initiated;
+        }
+      };
+    //
+    ////////////////////////
     } else {
-      throw std::runtime_error("--mt not yet implemented for client");
-    }
-
-    std::thread thread([&] { io_context.run(); });
-
-    while (initiated < iterations) {
-      queue_push.wait();
-      {
-        std::unique_lock<std::mutex> lk(queue_mtx);
-        queue.push(buffer);
-      }
-      queue_pop.signal();
-      ++initiated;
-    }
-
-    thread.join();
-  } else {
-    asiofi::unsynchronized_semaphore sem(io_context, queue_size);
-
-    if (is_server) {
-      ////////////////////////
-      // ST SERVER
-
+      std::cout << "ST" << std::endl;
+    ////////////////////////
+    // ST SERVER
       post_buffers = [&]() {
         sem.async_wait([&]() {
-          endpoint->send(buffer, mr.desc(), [&](boost::asio::mutable_buffer buffer) {
+          if (emulate_control_band) {
+            ctrl_endpoint->send(ctrl_buffer, desc, [](boost::asio::mutable_buffer) {});
+          }
+
+          endpoint->send(buffer, desc, [&](boost::asio::mutable_buffer buffer) {
             if (completed == 0) {
               start = std::chrono::steady_clock::now();
             }
@@ -230,10 +233,7 @@ auto msg_bw(const bool is_server,
               stop = std::chrono::steady_clock::now();
               endpoint->shutdown();
               signals.cancel();
-              auto elapsed_ms =
-                std::chrono::duration_cast<std::chrono::milliseconds>(stop - start)
-                  .count();
-              print_statistics(message_size, iterations, elapsed_ms);
+              print_statistics(message_size, iterations, start, stop);
             }
           });
           ++initiated;
@@ -242,26 +242,57 @@ auto msg_bw(const bool is_server,
           }
         });
       };
+    //
+    ////////////////////////
+    }
 
-      pep = make_unique<asiofi::passive_endpoint>(io_context, fabric);
-      pep->listen([&](asiofi::info&& info) {
-        endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain, info);
-        endpoint->enable();
-        endpoint->accept([&]() { post_buffers(); });
+    // server listen logic
+    pep = make_unique<asiofi::passive_endpoint>(io_context, fabric);
+    pep->listen([&](asiofi::info&& info) {
+      std::cout << "listen1" << std::endl;
+      endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain, info);
+      endpoint->enable();
+      endpoint->accept([&] {
+        if (emulate_control_band) {
+          pep->listen([&](asiofi::info&& info2) {
+            std::cout << "listen2" << std::endl;
+            ctrl_endpoint =
+              make_unique<asiofi::connected_endpoint>(io_context, domain, info2);
+            ctrl_endpoint->enable();
+            ctrl_endpoint->accept([&] {
+              std::cout << "accept2" << std::endl;
+              boost::asio::dispatch(io_context, post_buffers);
+            });
+          });
+        } else {
+          std::cout << "accept1" << std::endl;
+          boost::asio::dispatch(io_context, post_buffers);
+        }
       });
-
-      //
-      ////////////////////////
+    });
+  } else {
+      std::cout << "CLIENT" << std::endl;
+    if (is_multi_threaded) {
+    ////////////////////////
+    // MT CLIENT
+      throw std::runtime_error("--mt not yet implemented for client");
+    //
+    ////////////////////////
     } else {
-      ////////////////////////
-      // ST CLIENT
-
+      std::cout << "ST" << std::endl;
+    ////////////////////////
+    // ST CLIENT
       post_buffers = [&]() {
         sem.async_wait([&]() {
           if (initiated == 0) {
             start = std::chrono::steady_clock::now();
           }
-          endpoint->recv(buffer, mr.desc(), [&](boost::asio::mutable_buffer buffer) {
+
+          if (emulate_control_band) {
+            ctrl_endpoint->recv(ctrl_buffer, desc, [](boost::asio::mutable_buffer){});
+          }
+
+          endpoint->recv(buffer, desc, [&](boost::asio::mutable_buffer buffer) {
             ++completed;
             sem.signal();
 
@@ -269,10 +300,7 @@ auto msg_bw(const bool is_server,
               stop = std::chrono::steady_clock::now();
               endpoint->shutdown();
               signals.cancel();
-              auto elapsed_ms =
-                std::chrono::duration_cast<std::chrono::milliseconds>(stop - start)
-                  .count();
-              print_statistics(message_size, iterations, elapsed_ms);
+              print_statistics(message_size, iterations, start, stop);
             }
           });
           ++initiated;
@@ -281,21 +309,47 @@ auto msg_bw(const bool is_server,
           }
         });
       };
-
-      endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain);
-      endpoint->enable();
-      endpoint->connect([&](asiofi::eq::event e) {
-        if (e == asiofi::eq::event::connected) {
-          post_buffers();
-        } else {
-          throw std::runtime_error("Connection refused");
-        }
-      });
-
-      //
-      ////////////////////////
+    //
+    ////////////////////////
     }
 
+    // client connect logic
+    endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain);
+    endpoint->enable();
+    endpoint->connect([&](asiofi::eq::event e) {
+      std::cout << "connect1" << std::endl;
+      if (e == asiofi::eq::event::connected) {
+        if (emulate_control_band) {
+          ctrl_endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain);
+          ctrl_endpoint->enable();
+          ctrl_endpoint->connect([&](asiofi::eq::event e) {
+            std::cout << "connect2" << std::endl;
+            if (e == asiofi::eq::event::connected) {
+              post_buffers();
+            } else {
+              throw std::runtime_error("Connection refused");
+            }
+          });
+        } else {
+          post_buffers();
+        }
+      } else {
+        throw std::runtime_error("Connection refused");
+      }
+    });
+  }
+
+  // Run
+  if (is_multi_threaded) {
+    std::thread thread([&] {
+      std::cout << "MT RUN IO THREAD" << std::endl;
+      io_context.run();
+    });
+    std::cout << "MT RUN MAIN THREAD" << std::endl;
+    mt_main_thread();
+    thread.join();
+  } else {
+    std::cout << "ST RUN" << std::endl;
     io_context.run();
   }
 
@@ -315,5 +369,6 @@ auto main(int argc, char** argv) -> int
                 vm["message-size"].as<size_t>(),
                 vm["iterations"].as<size_t>(),
                 vm["queue-size"].as<size_t>(),
-                vm.count("mt"));
+                vm.count("mt"),
+                vm.count("ctrl"));
 }
