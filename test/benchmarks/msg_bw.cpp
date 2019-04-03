@@ -156,6 +156,7 @@ auto msg_bw(const bool is_server,
   std::function<void()> mt_main_thread;
 
   asiofi::unsynchronized_semaphore sem(io_context, queue_size);
+  asiofi::unsynchronized_semaphore sem2(io_context, queue_size);
 
   asiofi::synchronized_semaphore queue_push(io_context, queue_size);
   asiofi::synchronized_semaphore queue_pop(io_context, 0);
@@ -289,23 +290,42 @@ auto msg_bw(const bool is_server,
           }
 
           if (emulate_control_band) {
-            ctrl_endpoint->recv(ctrl_buffer, desc, [](boost::asio::mutable_buffer){});
-          }
+            ctrl_endpoint->recv(ctrl_buffer, desc, [&](boost::asio::mutable_buffer){
+              sem.signal();
+              sem2.async_wait([&]() {
+                endpoint->recv(buffer, desc, [&](boost::asio::mutable_buffer buffer) {
+                  ++completed;
+                  sem2.signal();
 
-          endpoint->recv(buffer, desc, [&](boost::asio::mutable_buffer buffer) {
-            ++completed;
-            sem.signal();
+                  if (completed == iterations) {
+                    stop = std::chrono::steady_clock::now();
+                    endpoint->shutdown();
+                    signals.cancel();
+                    print_statistics(message_size, iterations, start, stop);
+                  }
+                });
+                ++initiated;
+                if (initiated < iterations) {
+                  boost::asio::dispatch(io_context, post_buffers);
+                }
+              });
+            });
+          } else {
+            endpoint->recv(buffer, desc, [&](boost::asio::mutable_buffer buffer) {
+              ++completed;
+              sem.signal();
 
-            if (completed == iterations) {
-              stop = std::chrono::steady_clock::now();
-              endpoint->shutdown();
-              signals.cancel();
-              print_statistics(message_size, iterations, start, stop);
+              if (completed == iterations) {
+                stop = std::chrono::steady_clock::now();
+                endpoint->shutdown();
+                signals.cancel();
+                print_statistics(message_size, iterations, start, stop);
+              }
+            });
+            ++initiated;
+            if (initiated < iterations) {
+              boost::asio::dispatch(io_context, post_buffers);
             }
-          });
-          ++initiated;
-          if (initiated < iterations) {
-            boost::asio::dispatch(io_context, post_buffers);
           }
         });
       };
