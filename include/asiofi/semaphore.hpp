@@ -15,6 +15,7 @@
 #include <cassert>
 #include <condition_variable>
 #include <cstdint>
+#include <folly/Function.h>
 #include <functional>
 #include <mutex>
 
@@ -94,7 +95,7 @@ namespace asiofi {
   private:
     boost::asio::io_context& m_io_context;
     std::size_t m_count;
-    std::function<void()> m_handler;
+    folly::Function<void()> m_handler;
   };
 
   /**
@@ -124,7 +125,7 @@ namespace asiofi {
         boost::asio::dispatch(m_io_context, std::move(handler));
       } else {
         if (!m_handler) {
-          m_handler = std::function<void()>(std::move(handler));
+          m_handler = std::move(handler);
         } else {
           throw runtime_error(
             "Cannot initiate semaphore::async_wait twice at the same time.");
@@ -192,7 +193,7 @@ namespace asiofi {
   private:
     boost::asio::io_context& m_io_context;
     std::size_t m_count;
-    std::function<void()> m_handler;
+    folly::Function<void()> m_handler;
     std::mutex m_mutex;
     std::condition_variable m_cv;
   };
