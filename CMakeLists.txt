@@ -41,6 +41,26 @@ if(BUILD_CORE)
     COMPONENTS system program_options container)
   find_package2(PUBLIC OFI VERSION 1.6.0 REQUIRED
     COMPONENTS fi_sockets)
+
+  find_package2(PUBLIC folly VERSION 2019.04.01.00)
+  if (folly_FOUND)
+    set(FOLLY_EXTERN Folly::folly)
+    unset(FOLLY_INTERN)
+  else()
+    # Could not find an external installation, falling back to internal (light) copy
+    unset(FOLLY_EXTERN)
+    set(FOLLY_INTERN folly)
+    add_library(folly INTERFACE)
+    target_include_directories(folly INTERFACE
+      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include/asiofi/3rdparty>
+      $<INSTALL_INTERFACE:include/asiofi/3rdparty>
+    )
+    target_compile_definitions(folly INTERFACE FOLLY_NO_CONFIG)
+    set(PROJECT_folly_VERSION 2019.04.01.00)
+    set(folly_VERSION internal)
+    set(PROJECT_PACKAGE_DEPENDENCIES ${PROJECT_PACKAGE_DEPENDENCIES} folly)
+  endif ()
+  set(FOLLY_DEP ${FOLLY_EXTERN} ${FOLLY_INTERN})
 endif()
 ################################################################################
 
@@ -61,6 +81,7 @@ if(BUILD_CORE)
     Threads::Threads
     Boost::container
     OFI::libfabric
+    ${FOLLY_DEP}
   )
   target_include_directories(asiofi INTERFACE
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
@@ -98,7 +119,7 @@ endif()
 
 # Installation #################################################################
 if(BUILD_CORE)
-  install(TARGETS asiofi
+  install(TARGETS asiofi ${FOLLY_INTERN}
     EXPORT ${asiofi_EXPORT_SET}
     DESTINATION ${asiofi_INSTALL_LIBDIR}
   )
@@ -108,10 +129,16 @@ if(BUILD_CORE)
 
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     PATTERN *.in EXCLUDE
+    PATTERN 3rdparty EXCLUDE
   )
   install(FILES include/asiofi.hpp
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
+  if (FOLLY_INTERN)
+    install(DIRECTORY include/${PROJECT_NAME_LOWER}/3rdparty
+      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME_LOWER}
+    )
+  endif()
 
   install_asiofi_cmake_package()
 endif()
@@ -121,7 +148,7 @@ endif()
 # Summary ######################################################################
 if(PROJECT_PACKAGE_DEPENDENCIES)
   message(STATUS "  ")
-  message(STATUS "  ${Cyan}DEPENDENCY FOUND     VERSION                   PREFIX${CR}")
+  message(STATUS "  ${Cyan}DEPENDENCY FOUND   VERSION                      PREFIX${CR}")
   foreach(dep IN LISTS PROJECT_PACKAGE_DEPENDENCIES)
     if(${dep}_VERSION)
       if(${dep} STREQUAL Boost)
@@ -135,11 +162,11 @@ if(PROJECT_PACKAGE_DEPENDENCIES)
     if(PROJECT_${dep}_VERSION)
       set(version_req_str " (>= ${PROJECT_${dep}_VERSION})")
     endif()
-    pad(${dep} 20 " " dep_padded)
+    pad(${dep} 18 " " dep_padded)
     if(DISABLE_COLOR)
-      pad("${version_str}${version_req_str}" 25 " " version_padded)
+      pad("${version_str}${version_req_str}" 28 " " version_padded)
     else()
-      pad("${version_str}${version_req_str}" 25 " " version_padded COLOR 1)
+      pad("${version_str}${version_req_str}" 28 " " version_padded COLOR 1)
     endif()
     if(${dep} STREQUAL OFI)
       get_filename_component(prefix ${${dep}_INCLUDE_DIRS}/.. ABSOLUTE)
@@ -147,6 +174,14 @@ if(PROJECT_PACKAGE_DEPENDENCIES)
       get_target_property(benchmark_lib benchmark::benchmark INTERFACE_LOCATION)
       get_filename_component(prefix ${benchmark_lib} DIRECTORY)
       get_filename_component(prefix ${prefix}/.. ABSOLUTE)
+    elseif(${dep} STREQUAL folly)
+      if (FOLLY_EXTERN)
+        get_target_property(folly_lib ${FOLLY_EXTERN} INTERFACE_LOCATION)
+        get_filename_component(prefix ${folly_lib} DIRECTORY)
+        get_filename_component(prefix ${prefix}/.. ABSOLUTE)
+      else()
+        set(prefix "internal copy (folly::Function only)")
+      endif()
     else()
       get_filename_component(prefix ${${dep}_INCLUDE_DIR}/.. ABSOLUTE)
     endif()
