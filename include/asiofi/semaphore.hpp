@@ -44,7 +44,7 @@ namespace asiofi {
         boost::asio::dispatch(m_io_context, std::move(handler));
       } else {
         if (!m_handler) {
-          m_handler = std::function<void()>(std::move(handler));
+          m_handler = std::move(handler);
         } else {
           throw runtime_error(
             "Cannot initiate semaphore::async_wait twice at the same time.");
@@ -66,8 +66,10 @@ namespace asiofi {
     {
       if (m_handler) {
         // complete the waiting wait operation, then complete this operation
+        auto tmp = std::move(m_handler);
+        m_handler = nullptr;
         boost::asio::dispatch(m_io_context,
-                              [waiting_completion = std::move(m_handler),
+                              [waiting_completion = std::move(tmp),
                                current_completion = std::move(handler)]() mutable {
                                 waiting_completion();
                                 current_completion();
@@ -81,7 +83,9 @@ namespace asiofi {
     auto signal() -> void
     {
       if (m_handler) {
-        boost::asio::dispatch(m_io_context, std::move(m_handler));
+        auto tmp = std::move(m_handler);
+        m_handler = nullptr;
+        boost::asio::dispatch(m_io_context, std::move(tmp));
       } else {
         ++m_count;
       }
@@ -152,6 +156,7 @@ namespace asiofi {
 
       if (m_handler) {
         auto waiting = std::move(m_handler);
+        m_handler = nullptr;
         lk.unlock();
         // complete the waiting wait operation, then complete this operation
         boost::asio::dispatch(m_io_context,
@@ -174,6 +179,7 @@ namespace asiofi {
 
       if (m_handler) {
         auto waiting = std::move(m_handler);
+        m_handler = nullptr;
         lk.unlock();
         // complete the waiting signal operation
         boost::asio::dispatch(m_io_context, std::move(waiting));
