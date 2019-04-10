@@ -161,6 +161,13 @@ namespace asiofi {
       fi_addr_t dummy_addr;
       auto ctx =
         std::unique_ptr<fi_context>(new fi_context{nullptr, nullptr, nullptr, nullptr});
+      auto ctx_ptr = ctx.get();
+
+      auto ex = boost::asio::get_associated_executor(handler, m_io_context);
+      m_tx_cq.read(
+        boost::asio::bind_executor(
+          ex, [=, handler2 = std::move(handler)]() mutable { handler2(buffer); }),
+        std::move(ctx));
 
       // std::cout << "fi_send: buf=" << buffer.data()
                        // << ", len=" << buffer.size()
@@ -171,18 +178,12 @@ namespace asiofi {
                         buffer.size(),
                         mr_desc,
                         dummy_addr,
-                        ctx.get());
+                        ctx_ptr);
       if (rc != FI_SUCCESS) {
         throw runtime_error(
           "Failed posting a TX buffer on ofi connected_endpoint, reason: ",
           fi_strerror(rc));
       }
-
-      auto ex = boost::asio::get_associated_executor(handler, m_io_context);
-      m_tx_cq.async_read(
-        boost::asio::bind_executor(
-          ex, [=, handler2 = std::move(handler)]() mutable { handler2(buffer); }),
-        std::move(ctx));
     }
 
     template<typename CompletionHandler>
@@ -199,6 +200,13 @@ namespace asiofi {
       fi_addr_t dummy_addr;
       auto ctx =
         std::unique_ptr<fi_context>(new fi_context{nullptr, nullptr, nullptr, nullptr});
+      auto ctx_ptr = ctx.get();
+
+      auto ex = boost::asio::get_associated_executor(handler, m_io_context);
+      m_rx_cq.read(
+        boost::asio::bind_executor(
+          ex, [=, handler2 = std::move(handler)]() mutable { handler2(buffer); }),
+        std::move(ctx));
 
       // std::cout << "fi_recv: buf=" << buffer.data()
       //                  << ", len=" << buffer.size()
@@ -209,18 +217,12 @@ namespace asiofi {
                         buffer.size(),
                         mr_desc,
                         dummy_addr,
-                        ctx.get());
+                        ctx_ptr);
       if (rc != FI_SUCCESS) {
         throw runtime_error(
           "Failed posting a RX buffer on ofi connected_endpoint, reason: ",
           fi_strerror(rc));
       }
-
-      auto ex = boost::asio::get_associated_executor(handler, m_io_context);
-      m_rx_cq.async_read(
-        boost::asio::bind_executor(
-          ex, [=, handler2 = std::move(handler)]() mutable { handler2(buffer); }),
-        std::move(ctx));
     }
 
     template<typename CompletionHandler>
