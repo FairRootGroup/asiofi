@@ -164,7 +164,7 @@ namespace asiofi {
       auto ctx_ptr = ctx.get();
 
       auto ex = boost::asio::get_associated_executor(handler, m_io_context);
-      m_tx_cq.read(
+      m_tx_cq.async_read(
         boost::asio::bind_executor(
           ex, [=, handler2 = std::move(handler)]() mutable { handler2(buffer); }),
         std::move(ctx));
@@ -203,7 +203,7 @@ namespace asiofi {
       auto ctx_ptr = ctx.get();
 
       auto ex = boost::asio::get_associated_executor(handler, m_io_context);
-      m_rx_cq.read(
+      m_rx_cq.async_read(
         boost::asio::bind_executor(
           ex, [=, handler2 = std::move(handler)]() mutable { handler2(buffer); }),
         std::move(ctx));
