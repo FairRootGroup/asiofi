@@ -20,6 +20,7 @@
 #include <asiofi/memory_region.hpp>
 #include <asiofi/memory_resources.hpp>
 #include <asiofi/passive_endpoint.hpp>
+#include <asiofi/priority_scheduler.hpp>
 #include <asiofi/semaphore.hpp>
 #include <asiofi/unconnected_endpoint.hpp>
 #include <asiofi/version.hpp>
