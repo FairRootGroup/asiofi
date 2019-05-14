@@ -13,7 +13,7 @@
 #include <asiofi/domain.hpp>
 #include <asiofi/detail/get_native_wait_fd.hpp>
 #include <asiofi/detail/handler_queue.hpp>
-#include <boost/asio/io_context.hpp>
+#include <boost/asio/executor.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
 #include <memory>
@@ -23,13 +23,16 @@
 namespace asiofi
 {
   /**
-   * @struct completion_queue completion_queue.hpp <include/asiofi/completion_queue.hpp>
+   * @struct basic_completion_queue completion_queue.hpp <include/asiofi/completion_queue.hpp>
    * @brief Wraps ofi completion queue
    */
-  struct completion_queue
+  template <typename Executor = boost::asio::executor>
+  struct basic_completion_queue
   {
+    using executor_type = Executor;
+
     /// get wrapped C object
-    friend auto get_wrapped_obj(const completion_queue& cq) -> fid_cq*
+    friend auto get_wrapped_obj(const basic_completion_queue& cq) -> fid_cq*
     {
       return cq.m_completion_queue.get();
     }
@@ -40,23 +43,23 @@ namespace asiofi
       tx
     };
 
-    explicit completion_queue(boost::asio::io_context& ctx,
-                              direction dir,
-                              const domain& domain)
+    explicit basic_completion_queue(const executor_type& ex,
+                                    direction dir,
+                                    const domain& domain)
       : m_domain(domain)
       , m_completion_queue(
           create_completion_queue(dir, domain.get_info(), domain, m_context))
-      , m_io_context(ctx)
-      , m_cq_fd(m_io_context, detail::get_native_wait_fd(&m_completion_queue->fid))
+      , m_executor(ex)
+      , m_cq_fd(m_executor, detail::get_native_wait_fd(&m_completion_queue->fid))
     {
       post_reader();   // Start reading CQ events
     }
 
-    completion_queue() = delete;
+    basic_completion_queue() = delete;
 
-    completion_queue(const completion_queue&) = delete;
+    basic_completion_queue(const basic_completion_queue&) = delete;
 
-    completion_queue(completion_queue&&) = default;
+    basic_completion_queue(basic_completion_queue&&) = default;
 
     // enum class event : uint32_t {
     // connected = FI_CONNECTED,
@@ -78,7 +81,7 @@ namespace asiofi
     fi_context m_context;
     const domain& m_domain;
     std::unique_ptr<fid_cq, fid_cq_deleter> m_completion_queue;
-    boost::asio::io_context& m_io_context;
+    executor_type m_executor;
     boost::asio::posix::stream_descriptor m_cq_fd;
     asiofi::detail::handler_queue m_read_handler_queue;
 
@@ -91,7 +94,7 @@ namespace asiofi
         m_cq_fd.async_wait(
           boost::asio::posix::stream_descriptor::wait_read,
           std::move(
-            std::bind(&completion_queue::reader, this, std::placeholders::_1, true)));
+            std::bind(&basic_completion_queue::reader, this, std::placeholders::_1, true)));
         // call trywait again to make sure, we do not miss the notification
         // reader(boost::system::error_code(), false);
         // rc = fi_trywait(get_wrapped_obj(m_domain.get_fabric()), &wait_obj, 1);
@@ -101,9 +104,9 @@ namespace asiofi
         // reader(boost::system::error_code());
         // std::cout << "post" << std::endl;
         boost::asio::post(
-          m_io_context,
+          m_executor,
           std::move(std::bind(
-            &completion_queue::reader, this, boost::system::error_code(), true)));
+            &basic_completion_queue::reader, this, boost::system::error_code(), true)));
       }
     }
 
@@ -206,9 +209,10 @@ namespace asiofi
 
       return {cq, [](fid_cq* cq) { fi_close(&cq->fid); }};
     }
-  }; /* struct completion_queue */
+  }; /* struct basic_completion_queue */
 
-  using cq = completion_queue;
+  using completion_queue = basic_completion_queue<>;
+  using cq = basic_completion_queue<>;
 
 }   // namespace asiofi
 

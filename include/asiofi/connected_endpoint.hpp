@@ -16,7 +16,7 @@
 #include <asiofi/event_queue.hpp>
 #include <boost/asio/associated_executor.hpp>
 #include <boost/asio/bind_executor.hpp>
-#include <boost/asio/io_context.hpp>
+#include <boost/asio/executor.hpp>
 #include <cassert>
 #include <functional>
 #include <iostream>
@@ -27,43 +27,46 @@
 
 namespace asiofi {
   /**
-   * @struct connected_endpoint conntected_endpoint.hpp <asiofi/connected_endpoint.hpp>
+   * @struct basic_connected_endpoint conntected_endpoint.hpp <asiofi/connected_endpoint.hpp>
    * @brief Wraps fid_ep and connected mode operations
    */
-  struct connected_endpoint
+  template <typename Executor = boost::asio::executor>
+  struct basic_connected_endpoint
   {
+    using executor_type = Executor;
+
     /// get wrapped C object
-    friend auto get_wrapped_obj(const connected_endpoint& ep) -> fid_ep*
+    friend auto get_wrapped_obj(const basic_connected_endpoint& ep) -> fid_ep*
     {
       return ep.m_connected_endpoint.get();
     }
 
     /// ctor #1
-    explicit connected_endpoint(boost::asio::io_context& io_context,
-                                const domain& domain,
-                                const info& info)
-      : m_io_context(io_context)
+    explicit basic_connected_endpoint(const executor_type& ex,
+                                      const domain& domain,
+                                      const info& info)
+      : m_executor(ex)
       , m_domain(domain)
-      , m_eq(m_io_context, domain.get_fabric())
-      , m_rx_cq(m_io_context, cq::direction::rx, domain)
-      , m_tx_cq(m_io_context, cq::direction::tx, domain)
+      , m_eq(m_executor, domain.get_fabric())
+      , m_rx_cq(m_executor, cq::direction::rx, domain)
+      , m_tx_cq(m_executor, cq::direction::tx, domain)
       , m_connected_endpoint(create_connected_endpoint(domain, info, m_context))
     {
       bind(m_eq);
-      bind(m_rx_cq, connected_endpoint::cq_flag::recv);
-      bind(m_tx_cq, connected_endpoint::cq_flag::transmit);
+      bind(m_rx_cq, basic_connected_endpoint::cq_flag::recv);
+      bind(m_tx_cq, basic_connected_endpoint::cq_flag::transmit);
     }
 
     /// ctor #2
-    explicit connected_endpoint(boost::asio::io_context& io_context, const domain& domain)
-      : connected_endpoint(io_context, domain, domain.get_info())
+    explicit basic_connected_endpoint(const executor_type& ex, const domain& domain)
+      : basic_connected_endpoint(ex, domain, domain.get_info())
     {}
 
-    connected_endpoint() = delete;
+    basic_connected_endpoint() = delete;
 
-    connected_endpoint(const connected_endpoint& rh) = delete;
+    basic_connected_endpoint(const basic_connected_endpoint& rh) = delete;
 
-    connected_endpoint(connected_endpoint&& rhs) = default;
+    basic_connected_endpoint(basic_connected_endpoint&& rhs) = default;
 
     auto bind(const event_queue& eq) -> void
     {
@@ -80,7 +83,7 @@ namespace asiofi {
       selective_completion = FI_SELECTIVE_COMPLETION
     };
 
-    auto bind(const completion_queue& cq, connected_endpoint::cq_flag flag) -> void
+    auto bind(const completion_queue& cq, basic_connected_endpoint::cq_flag flag) -> void
     {
       auto rc = fi_ep_bind(m_connected_endpoint.get(),
                            &get_wrapped_obj(cq)->fid,
@@ -163,7 +166,7 @@ namespace asiofi {
         std::unique_ptr<fi_context>(new fi_context{nullptr, nullptr, nullptr, nullptr});
       auto ctx_ptr = ctx.get();
 
-      auto ex = boost::asio::get_associated_executor(handler, m_io_context);
+      auto ex = boost::asio::get_associated_executor(handler, m_executor);
       m_tx_cq.async_read(
         boost::asio::bind_executor(
           ex, [=, handler2 = std::move(handler)]() mutable { handler2(buffer); }),
@@ -202,7 +205,7 @@ namespace asiofi {
         std::unique_ptr<fi_context>(new fi_context{nullptr, nullptr, nullptr, nullptr});
       auto ctx_ptr = ctx.get();
 
-      auto ex = boost::asio::get_associated_executor(handler, m_io_context);
+      auto ex = boost::asio::get_associated_executor(handler, m_executor);
       m_rx_cq.async_read(
         boost::asio::bind_executor(
           ex, [=, handler2 = std::move(handler)]() mutable { handler2(buffer); }),
@@ -263,7 +266,7 @@ namespace asiofi {
     using fid_ep_deleter = std::function<void(fid_ep*)>;
 
     fi_context m_context;
-    boost::asio::io_context& m_io_context;
+    executor_type m_executor;
     const domain& m_domain;
     event_queue m_eq;
     completion_queue m_rx_cq, m_tx_cq;
@@ -284,9 +287,10 @@ namespace asiofi {
 
       return {ep, [](fid_ep* ep) { fi_close(&ep->fid); }};
     }
-  }; /* struct connected_endpoint */
+  }; /* struct basic_connected_endpoint */
 
-  using cep = connected_endpoint;
+  using connected_endpoint = basic_connected_endpoint<>;
+  using cep = basic_connected_endpoint<>;
 
 } /* namespace asiofi */
 

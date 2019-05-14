@@ -15,7 +15,7 @@
 #include <asiofi/fabric.hpp>
 #include <atomic>
 #include <boost/asio/bind_executor.hpp>
-#include <boost/asio/io_context.hpp>
+#include <boost/asio/executor.hpp>
 #include <cassert>
 #include <functional>
 #include <iostream>
@@ -27,37 +27,40 @@
 namespace asiofi
 {
   /**
-   * @struct passive_endpoint connected_endpoint.hpp <asiofi/connected_endpoint.hpp>
+   * @struct basic_passive_endpoint passive_endpoint.hpp <asiofi/passive_endpoint.hpp>
    * @brief Wraps fid_pep
    */
-  struct passive_endpoint
+  template <typename Executor = boost::asio::executor>
+  struct basic_passive_endpoint
   {
+    using executor_type = Executor;
+
     /// get wrapped C object
-    friend auto get_wrapped_obj(const passive_endpoint& pep) -> fid_pep* { return pep.m_pep.get(); }
+    friend auto get_wrapped_obj(const basic_passive_endpoint& pep) -> fid_pep* { return pep.m_pep.get(); }
 
     /// ctor #1
-    explicit passive_endpoint(boost::asio::io_context& io_context, const fabric& fabric)
+    explicit basic_passive_endpoint(const executor_type& ex, const fabric& fabric)
     : m_fabric(fabric)
-    , m_io_context(io_context)
-    , m_eq(io_context, fabric)
+    , m_executor(ex)
+    , m_eq(m_executor, fabric)
     , m_pep(create_passive_endpoint(fabric, m_context))
     , m_listening(false)
     {
       // bind event queue to passive connected_endpoint registering for connection requests
-      bind(m_eq, passive_endpoint::eq_flag::connreq);
+      bind(m_eq, basic_passive_endpoint::eq_flag::connreq);
     }
 
     /// (default) ctor
-    explicit passive_endpoint() = delete;
+    explicit basic_passive_endpoint() = delete;
 
     /// copy ctor
-    explicit passive_endpoint(const passive_endpoint& rh) = delete;
+    explicit basic_passive_endpoint(const basic_passive_endpoint& rh) = delete;
 
     /// move ctor
-    explicit passive_endpoint(passive_endpoint&& rhs) = default;
+    explicit basic_passive_endpoint(basic_passive_endpoint&& rhs) = default;
 
     /// dtor
-    ~passive_endpoint()
+    ~basic_passive_endpoint()
     {
     }
 
@@ -65,7 +68,7 @@ namespace asiofi
       connreq = FI_CONNREQ
     };
 
-    auto bind(const event_queue& eq, passive_endpoint::eq_flag flags) -> void
+    auto bind(const event_queue& eq, basic_passive_endpoint::eq_flag flags) -> void
     {
       auto rc = fi_pep_bind(m_pep.get(), &get_wrapped_obj(eq)->fid, static_cast<uint64_t>(flags));
       if (rc != FI_SUCCESS)
@@ -129,7 +132,7 @@ namespace asiofi
 
     const fabric& m_fabric;
     fi_context m_context;
-    boost::asio::io_context& m_io_context;
+    executor_type m_executor;
     event_queue m_eq;
     std::unique_ptr<fid_pep, fid_pep_deleter> m_pep;
     std::atomic<bool> m_listening;
@@ -146,9 +149,10 @@ namespace asiofi
 
       return {pep, [](fid_pep* pep){ fi_close(&pep->fid); }};
     }
-  }; /* struct passive_endpoint */
+  }; /* struct basic_passive_endpoint */
 
-  using pep = passive_endpoint;
+  using passive_endpoint = basic_passive_endpoint<>;
+  using pep = basic_passive_endpoint<>;
 
 } /* namespace asiofi */
 

@@ -13,38 +13,41 @@
 #include <asiofi/fabric.hpp>
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/dispatch.hpp>
-#include <boost/asio/io_context.hpp>
+#include <boost/asio/executor.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
 #include <rdma/fi_domain.h>
 
 namespace asiofi
 {
   /**
-   * @struct event_queue event_queue.hpp <include/asiofi/event_queue.hpp>
+   * @struct basic_event_queue event_queue.hpp <include/asiofi/event_queue.hpp>
    * @brief Wraps fid_eq
    *
    * TODO implement analog to asiofi::completion_queue
    */
-  struct event_queue
+  template <typename Executor = boost::asio::executor>
+  struct basic_event_queue
   {
+    using executor_type = Executor;
+
     /// get wrapped C object
-    friend auto get_wrapped_obj(const event_queue& eq) -> fid_eq*
+    friend auto get_wrapped_obj(const basic_event_queue& eq) -> fid_eq*
     {
       return eq.m_event_queue.get();
     }
 
-    explicit event_queue(boost::asio::io_context& io_context, const fabric& fabric)
+    explicit basic_event_queue(const executor_type& ex, const fabric& fabric)
       : m_fabric(fabric)
       , m_event_queue(create_event_queue(fabric, m_context))
-      , m_io_context(io_context)
-      , m_eq_fd(io_context, detail::get_native_wait_fd(&m_event_queue.get()->fid))
+      , m_executor(ex)
+      , m_eq_fd(m_executor, detail::get_native_wait_fd(&m_event_queue.get()->fid))
     {}
 
-    event_queue() = delete;
+    basic_event_queue() = delete;
 
-    event_queue(const event_queue&) = delete;
+    basic_event_queue(const basic_event_queue&) = delete;
 
-    event_queue(event_queue&& rhs) = default;
+    basic_event_queue(basic_event_queue&& rhs) = default;
 
     enum class event : uint32_t
     {
@@ -54,7 +57,7 @@ namespace asiofi
       connrefused
     };
 
-    template<typename CompletionHandler = std::function<void(event_queue::event, info&&)>>
+    template<typename CompletionHandler = std::function<void(basic_event_queue::event, info&&)>>
     struct read_op
     {
       explicit read_op(fid_eq* eq, CompletionHandler&& handler)
@@ -82,7 +85,7 @@ namespace asiofi
           throw runtime_error(rc, "Failed reading error entry from event queue");
         } else {
           if (error.err == FI_ECONNREFUSED) {
-            m_handler(event_queue::event::connrefused, asiofi::info());
+            m_handler(basic_event_queue::event::connrefused, asiofi::info());
           } else {
             throw runtime_error(
               "Failed event, reason: ",
@@ -108,9 +111,9 @@ namespace asiofi
           } else if (rc < 0) {
             throw runtime_error(rc, "Failed reading from event queue");
           } else {
-            auto event = static_cast<event_queue::event>(event_);
+            auto event = static_cast<basic_event_queue::event>(event_);
 
-            if (event == event_queue::event::connreq) {
+            if (event == basic_event_queue::event::connreq) {
               m_handler(event, asiofi::info(entry.info));
             } else {
               m_handler(event, asiofi::info());
@@ -131,7 +134,7 @@ namespace asiofi
     {
       auto wait_obj = &m_event_queue.get()->fid;
       auto rc = fi_trywait(get_wrapped_obj(m_fabric), &wait_obj, 1);
-      auto ex = boost::asio::get_associated_executor(handler, m_io_context);
+      auto ex = boost::asio::get_associated_executor(handler, m_executor);
       auto read_handler = boost::asio::bind_executor(ex, read_op<>(m_event_queue.get(), std::move(handler)));
       if (rc == FI_SUCCESS) {
         m_eq_fd.async_wait(boost::asio::posix::stream_descriptor::wait_read, std::move(read_handler));
@@ -146,7 +149,7 @@ namespace asiofi
     fi_context m_context;
     const fabric& m_fabric;
     std::unique_ptr<fid_eq, fid_eq_deleter> m_event_queue;
-    boost::asio::io_context& m_io_context;
+    executor_type m_executor;
     boost::asio::posix::stream_descriptor m_eq_fd;
 
     static auto create_event_queue(const fabric& fabric, fi_context& context) -> std::unique_ptr<fid_eq, fid_eq_deleter>
@@ -168,9 +171,10 @@ namespace asiofi
 
       return {eq, [](fid_eq* eq){ fi_close(&eq->fid); }};
     }
-  }; /* struct event_queue */
+  }; /* struct basic_event_queue */
 
-  using eq = event_queue;
+  using event_queue = basic_event_queue<>;
+  using eq = basic_event_queue<>;
 
 } /* namespace asiofi */
 

@@ -10,8 +10,8 @@
 #define ASIOFI_SEMAPHORE_HPP
 
 #include <asiofi/errno.hpp>
-#include <boost/asio/io_context.hpp>
 #include <boost/asio/dispatch.hpp>
+#include <boost/asio/executor.hpp>
 #include <cassert>
 #include <condition_variable>
 #include <cstdint>
@@ -27,11 +27,14 @@ namespace asiofi {
    * Semaphore:
    * - NOT thread-safe
    */
+  template <typename Executor = boost::asio::executor>
   struct unsynchronized_semaphore
   {
-    explicit unsynchronized_semaphore(boost::asio::io_context& ioc,
+    using executor_type = Executor;
+
+    explicit unsynchronized_semaphore(const executor_type& ex,
                                       std::size_t initial_count = 1)
-      : m_io_context(ioc)
+      : m_executor(ex)
       , m_count(initial_count)
       , m_handler(nullptr)
     {}
@@ -41,7 +44,7 @@ namespace asiofi {
     {
       if (m_count > 0) {
         --m_count;
-        boost::asio::dispatch(m_io_context, std::move(handler));
+        boost::asio::dispatch(m_executor, std::move(handler));
       } else {
         if (!m_handler) {
           m_handler = std::move(handler);
@@ -68,7 +71,7 @@ namespace asiofi {
         // complete the waiting wait operation, then complete this operation
         auto tmp = std::move(m_handler);
         m_handler = nullptr;
-        boost::asio::dispatch(m_io_context,
+        boost::asio::dispatch(m_executor,
                               [waiting_completion = std::move(tmp),
                                current_completion = std::move(handler)]() mutable {
                                 waiting_completion();
@@ -76,7 +79,7 @@ namespace asiofi {
                               });
       } else {
         ++m_count;
-        boost::asio::dispatch(m_io_context, std::move(handler));
+        boost::asio::dispatch(m_executor, std::move(handler));
       }
     }
 
@@ -85,7 +88,7 @@ namespace asiofi {
       if (m_handler) {
         auto tmp = std::move(m_handler);
         m_handler = nullptr;
-        boost::asio::dispatch(m_io_context, std::move(tmp));
+        boost::asio::dispatch(m_executor, std::move(tmp));
       } else {
         ++m_count;
       }
@@ -97,7 +100,7 @@ namespace asiofi {
     }
 
   private:
-    boost::asio::io_context& m_io_context;
+    executor_type m_executor;
     std::size_t m_count;
     folly::Function<void()> m_handler;
   };
@@ -109,11 +112,14 @@ namespace asiofi {
    * Semaphore:
    * - thread-safe
    */
+  template <typename Executor = boost::asio::executor>
   struct synchronized_semaphore
   {
-    explicit synchronized_semaphore(boost::asio::io_context& ioc,
+    using executor_type = Executor;
+
+    explicit synchronized_semaphore(const executor_type& ex,
                                     std::size_t initial_count = 1)
-      : m_io_context(ioc)
+      : m_executor(ex)
       , m_count(initial_count)
       , m_handler(nullptr)
     {}
@@ -126,7 +132,7 @@ namespace asiofi {
       if (m_count > 0) {
         --m_count;
         lk.unlock();
-        boost::asio::dispatch(m_io_context, std::move(handler));
+        boost::asio::dispatch(m_executor, std::move(handler));
       } else {
         if (!m_handler) {
           m_handler = std::move(handler);
@@ -159,7 +165,7 @@ namespace asiofi {
         m_handler = nullptr;
         lk.unlock();
         // complete the waiting wait operation, then complete this operation
-        boost::asio::dispatch(m_io_context,
+        boost::asio::dispatch(m_executor,
                               [waiting_completion = std::move(waiting),
                                current_completion = std::move(handler)]() mutable {
                                 waiting_completion();
@@ -169,7 +175,7 @@ namespace asiofi {
         ++m_count;
         lk.unlock();
         m_cv.notify_one();
-        boost::asio::dispatch(m_io_context, std::move(handler));
+        boost::asio::dispatch(m_executor, std::move(handler));
       }
     }
 
@@ -182,7 +188,7 @@ namespace asiofi {
         m_handler = nullptr;
         lk.unlock();
         // complete the waiting signal operation
-        boost::asio::dispatch(m_io_context, std::move(waiting));
+        boost::asio::dispatch(m_executor, std::move(waiting));
       } else {
         ++m_count;
         lk.unlock();
@@ -197,7 +203,7 @@ namespace asiofi {
     }
 
   private:
-    boost::asio::io_context& m_io_context;
+    executor_type m_executor;
     std::size_t m_count;
     folly::Function<void()> m_handler;
     std::mutex m_mutex;
