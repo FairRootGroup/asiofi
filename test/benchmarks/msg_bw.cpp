@@ -11,7 +11,6 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/executor_work_guard.hpp>
-#include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/asio/signal_set.hpp>
 #include <boost/program_options.hpp>
@@ -116,10 +115,13 @@ auto msg_bw(const bool is_server,
             const bool is_multi_threaded,
             const bool emulate_control_band) -> int
 {
-  boost::asio::io_context io_context;
-  boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
+  asiofi::priority_scheduler sched;
+  asiofi::priority_scheduler::executor_type high(sched.get_executor(1));
+  asiofi::priority_scheduler::executor_type low(sched.get_executor(0));
+
+  boost::asio::signal_set signals(low, SIGINT, SIGTERM);
   signals.async_wait([&](const boost::system::error_code& error, int signal_number) {
-      io_context.stop();
+      sched.stop();
   });
 
   asiofi::hints hints;
@@ -155,11 +157,11 @@ auto msg_bw(const bool is_server,
   std::function<void()> post_buffers;
   std::function<void()> mt_main_thread;
 
-  asiofi::unsynchronized_semaphore sem(io_context, queue_size);
-  asiofi::unsynchronized_semaphore sem2(io_context, queue_size);
+  asiofi::unsynchronized_semaphore sem(high, queue_size);
+  asiofi::unsynchronized_semaphore sem2(low, queue_size);
 
-  asiofi::synchronized_semaphore queue_push(io_context, queue_size);
-  asiofi::synchronized_semaphore queue_pop(io_context, 0);
+  asiofi::synchronized_semaphore queue_push(high, queue_size);
+  asiofi::synchronized_semaphore queue_pop(high, 0);
   std::mutex queue_mtx;
   std::queue<boost::asio::mutable_buffer> queue;
 
@@ -195,7 +197,7 @@ auto msg_bw(const bool is_server,
             }
           });
 
-          boost::asio::dispatch(io_context, post_buffers);
+          boost::asio::dispatch(high, post_buffers);
         });
       };
 
@@ -239,7 +241,7 @@ auto msg_bw(const bool is_server,
           });
           ++initiated;
           if (initiated < iterations) {
-            boost::asio::dispatch(io_context, post_buffers);
+            boost::asio::dispatch(high, post_buffers);
           }
         });
       };
@@ -248,26 +250,26 @@ auto msg_bw(const bool is_server,
     }
 
     // server listen logic
-    pep = make_unique<asiofi::passive_endpoint>(io_context, fabric);
+    pep = make_unique<asiofi::passive_endpoint>(high, fabric);
     pep->listen([&](asiofi::info&& info) {
       std::cout << "listen1" << std::endl;
-      endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain, info);
+      endpoint = make_unique<asiofi::connected_endpoint>(high, domain, info);
       endpoint->enable();
       endpoint->accept([&] {
         if (emulate_control_band) {
           pep->listen([&](asiofi::info&& info2) {
             std::cout << "listen2" << std::endl;
             ctrl_endpoint =
-              make_unique<asiofi::connected_endpoint>(io_context, domain, info2);
+              make_unique<asiofi::connected_endpoint>(high, domain, info2);
             ctrl_endpoint->enable();
             ctrl_endpoint->accept([&] {
               std::cout << "accept2" << std::endl;
-              boost::asio::dispatch(io_context, post_buffers);
+              boost::asio::dispatch(high, post_buffers);
             });
           });
         } else {
           std::cout << "accept1" << std::endl;
-          boost::asio::dispatch(io_context, post_buffers);
+          boost::asio::dispatch(high, post_buffers);
         }
       });
     });
@@ -306,7 +308,7 @@ auto msg_bw(const bool is_server,
                 });
                 ++initiated;
                 if (initiated < iterations) {
-                  boost::asio::dispatch(io_context, post_buffers);
+                  boost::asio::dispatch(high, post_buffers);
                 }
               });
             });
@@ -324,7 +326,7 @@ auto msg_bw(const bool is_server,
             });
             ++initiated;
             if (initiated < iterations) {
-              boost::asio::dispatch(io_context, post_buffers);
+              boost::asio::dispatch(high, post_buffers);
             }
           }
         });
@@ -334,13 +336,13 @@ auto msg_bw(const bool is_server,
     }
 
     // client connect logic
-    endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain);
+    endpoint = make_unique<asiofi::connected_endpoint>(low, domain);
     endpoint->enable();
     endpoint->connect([&](asiofi::eq::event e) {
       std::cout << "connect1" << std::endl;
       if (e == asiofi::eq::event::connected) {
         if (emulate_control_band) {
-          ctrl_endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain);
+          ctrl_endpoint = make_unique<asiofi::connected_endpoint>(high, domain);
           ctrl_endpoint->enable();
           ctrl_endpoint->connect([&](asiofi::eq::event e) {
             std::cout << "connect2" << std::endl;
@@ -363,14 +365,14 @@ auto msg_bw(const bool is_server,
   if (is_multi_threaded) {
     std::thread thread([&] {
       std::cout << "MT RUN IO THREAD" << std::endl;
-      io_context.run();
+      sched.run();
     });
     std::cout << "MT RUN MAIN THREAD" << std::endl;
     mt_main_thread();
     thread.join();
   } else {
     std::cout << "ST RUN" << std::endl;
-    io_context.run();
+    sched.run();
   }
 
   return EXIT_SUCCESS;

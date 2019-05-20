@@ -39,7 +39,7 @@ namespace asiofi {
       std::push_heap(m_elements.begin(), m_elements.end(), m_compare);
     }
 
-    auto pop() -> T&&
+    auto pop() -> T
     {
       std::pop_heap(m_elements.begin(), m_elements.end(), m_compare);
       T result(std::move(m_elements.back()));

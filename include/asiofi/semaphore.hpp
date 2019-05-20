@@ -21,18 +21,18 @@
 
 namespace asiofi {
   /**
-   * @struct unsynchronized_semaphore semaphore.hpp <asiofi/semaphore.hpp>
+   * @struct basic_unsynchronized_semaphore semaphore.hpp <asiofi/semaphore.hpp>
    * @brief A simple asio-enabled semaphore
    *
    * Semaphore:
    * - NOT thread-safe
    */
   template <typename Executor = boost::asio::executor>
-  struct unsynchronized_semaphore
+  struct basic_unsynchronized_semaphore
   {
     using executor_type = Executor;
 
-    explicit unsynchronized_semaphore(const executor_type& ex,
+    explicit basic_unsynchronized_semaphore(const executor_type& ex,
                                       std::size_t initial_count = 1)
       : m_executor(ex)
       , m_count(initial_count)
@@ -105,19 +105,21 @@ namespace asiofi {
     folly::Function<void()> m_handler;
   };
 
+  using unsynchronized_semaphore = basic_unsynchronized_semaphore<>;
+
   /**
-   * @struct synchronized_semaphore semaphore.hpp <asiofi/semaphore.hpp>
+   * @struct basic_synchronized_semaphore semaphore.hpp <asiofi/semaphore.hpp>
    * @brief A simple asio-enabled semaphore
    *
    * Semaphore:
    * - thread-safe
    */
   template <typename Executor = boost::asio::executor>
-  struct synchronized_semaphore
+  struct basic_synchronized_semaphore
   {
     using executor_type = Executor;
 
-    explicit synchronized_semaphore(const executor_type& ex,
+    explicit basic_synchronized_semaphore(const executor_type& ex,
                                     std::size_t initial_count = 1)
       : m_executor(ex)
       , m_count(initial_count)
@@ -210,6 +212,7 @@ namespace asiofi {
     std::condition_variable m_cv;
   };
 
+  using synchronized_semaphore = basic_synchronized_semaphore<>;
 }   // namespace asiofi
 
 #endif /* ifndef ASIOFI_SEMAPHORE_HPP */  
