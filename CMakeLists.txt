@@ -7,13 +7,12 @@
 ################################################################################
 
 cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
-
+cmake_policy(VERSION 3.10...3.16)
 
 # Project ######################################################################
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 include(asiofiLib)
 
-set_asiofi_cmake_policies()
 get_git_version(OUTVAR_PREFIX asiofi)
 
 project(asiofi VERSION ${asiofi_VERSION} LANGUAGES CXX)
