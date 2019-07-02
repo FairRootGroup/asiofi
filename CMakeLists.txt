@@ -36,8 +36,14 @@ if(BUILD_CORE)
   set(THREADS_PREFER_PTHREAD_FLAG TRUE)
   find_package(Threads REQUIRED)
 
-  find_package2(PUBLIC Boost VERSION 1.66 REQUIRED
-    COMPONENTS system program_options container)
+  if(NOT DEFINED Boost_NO_BOOST_CMAKE AND CMAKE_VERSION VERSION_LESS 3.15)
+    # Since Boost 1.70 a CMake package is shipped by default. Unfortunately, it has a number
+    # of problems that are only fixed in Boost 1.71 or CMake 3.15. By default we skip the
+    # BoostConfig lookup. This can be overridden on the command line via -DBoost_NO_BOOST_CMAKE=OFF
+    set(Boost_NO_BOOST_CMAKE ON)
+  endif()
+  find_package2(PUBLIC Boost VERSION 1.70 REQUIRED
+    COMPONENTS program_options container)
   find_package2(PUBLIC OFI VERSION 1.6.0 REQUIRED
     COMPONENTS fi_sockets)
 endif()
