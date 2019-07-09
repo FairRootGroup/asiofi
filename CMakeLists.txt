@@ -42,8 +42,12 @@ if(BUILD_CORE)
     # BoostConfig lookup. This can be overridden on the command line via -DBoost_NO_BOOST_CMAKE=OFF
     set(Boost_NO_BOOST_CMAKE ON)
   endif()
+  # workaround bug https://github.com/boostorg/boost_install/issues/5
+  set(__org ${BUILD_SHARED_LIBS})
+  set(BUILD_SHARED_LIBS ON)
   find_package2(PUBLIC Boost VERSION 1.70 REQUIRED
     COMPONENTS program_options container)
+  set(BUILD_SHARED_LIBS ${__org})
   find_package2(PUBLIC OFI VERSION 1.6.0 REQUIRED
     COMPONENTS fi_sockets)
 endif()
