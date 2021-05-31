@@ -1,5 +1,5 @@
 /********************************************************************************
- * Copyright (C) 2018-2019 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
+ * Copyright (C) 2018-2021 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
  *                                                                              *
  *              This software is distributed under the terms of the             *
  *              GNU Lesser General Public Licence (LGPL) version 3,             *
@@ -10,12 +10,12 @@
 #define ASIOFI_SEMAPHORE_HPP
 
 #include <asiofi/errno.hpp>
+#include <asiofi/detail/function2.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/dispatch.hpp>
 #include <cassert>
 #include <condition_variable>
 #include <cstdint>
-#include <folly/Function.h>
 #include <functional>
 #include <mutex>
 
@@ -99,7 +99,7 @@ namespace asiofi {
   private:
     boost::asio::io_context& m_io_context;
     std::size_t m_count;
-    folly::Function<void()> m_handler;
+    fu2::unique_function<void()> m_handler;
   };
 
   /**
@@ -199,11 +199,11 @@ namespace asiofi {
   private:
     boost::asio::io_context& m_io_context;
     std::size_t m_count;
-    folly::Function<void()> m_handler;
+    fu2::unique_function<void()> m_handler;
     std::mutex m_mutex;
     std::condition_variable m_cv;
   };
 
 }   // namespace asiofi
 
-#endif /* ifndef ASIOFI_SEMAPHORE_HPP */  
+#endif /* ifndef ASIOFI_SEMAPHORE_HPP */

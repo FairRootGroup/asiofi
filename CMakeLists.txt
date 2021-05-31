@@ -45,26 +45,6 @@ if(BUILD_CORE)
   set(BUILD_SHARED_LIBS ${__org})
   find_package2(PUBLIC OFI VERSION 1.6.0 REQUIRED
     COMPONENTS fi_sockets)
-
-  find_package2(PUBLIC folly VERSION 2019.04.01.00)
-  if (folly_FOUND)
-    set(FOLLY_EXTERN Folly::folly)
-    unset(FOLLY_INTERN)
-  else()
-    # Could not find an external installation, falling back to internal (light) copy
-    unset(FOLLY_EXTERN)
-    set(FOLLY_INTERN folly)
-    add_library(folly INTERFACE)
-    target_include_directories(folly INTERFACE
-      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include/asiofi/3rdparty>
-      $<INSTALL_INTERFACE:include/asiofi/3rdparty>
-    )
-    target_compile_definitions(folly INTERFACE FOLLY_NO_CONFIG)
-    set(PROJECT_folly_VERSION 2019.04.01.00)
-    set(folly_VERSION internal)
-    set(PROJECT_PACKAGE_DEPENDENCIES ${PROJECT_PACKAGE_DEPENDENCIES} folly)
-  endif ()
-  set(FOLLY_DEP ${FOLLY_EXTERN} ${FOLLY_INTERN})
 endif()
 ################################################################################
 
@@ -86,7 +66,6 @@ if(BUILD_CORE)
     Threads::Threads
     Boost::container
     OFI::libfabric
-    ${FOLLY_DEP}
   )
   target_compile_features(${target} INTERFACE cxx_std_17)
   target_include_directories(${target} INTERFACE
@@ -125,7 +104,7 @@ endif()
 
 # Installation #################################################################
 if(BUILD_CORE)
-  install(TARGETS asiofi ${FOLLY_INTERN}
+  install(TARGETS asiofi
     EXPORT ${PROJECT_EXPORT_SET}
     DESTINATION ${PROJECT_INSTALL_LIBDIR}
   )
@@ -135,16 +114,10 @@ if(BUILD_CORE)
 
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     PATTERN *.in EXCLUDE
-    PATTERN 3rdparty EXCLUDE
   )
   install(FILES include/asiofi.hpp
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
-  if (FOLLY_INTERN)
-    install(DIRECTORY include/${PROJECT_NAME_LOWER}/3rdparty
-      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME_LOWER}
-    )
-  endif()
   install(FILES cmake/FindOFI.cmake
     DESTINATION ${PROJECT_INSTALL_CMAKEMODDIR}
   )
