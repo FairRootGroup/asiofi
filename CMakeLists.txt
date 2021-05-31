@@ -1,47 +1,42 @@
 ################################################################################
-#    Copyright (C) 2018 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    #
+# Copyright (C) 2018-2021 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  #
 #                                                                              #
 #              This software is distributed under the terms of the             #
 #              GNU Lesser General Public Licence (LGPL) version 3,             #
 #                  copied verbatim in the file "LICENSE"                       #
 ################################################################################
 
-cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
-cmake_policy(VERSION 3.14...3.15)
+cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
+cmake_policy(VERSION 3.15...3.20)
 
 # Project ######################################################################
-set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
-include(asiofiLib)
+list(PREPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
-get_git_version(OUTVAR_PREFIX asiofi)
+include(GitHelper)
+get_git_version()
 
-project(asiofi VERSION ${asiofi_VERSION} LANGUAGES CXX)
-message("${BWhite}${PROJECT_NAME}${CR} ${asiofi_GIT_VERSION} from ${asiofi_DATE}")
+project(asiofi VERSION ${PROJECT_VERSION} LANGUAGES CXX)
 
-set_asiofi_defaults()
 include(CTest)
+include(${PROJECT_NAME}ProjectSettings)
 ################################################################################
 
 
 # Build options ################################################################
-include(CMakeDependentOption)
-option(BUILD_CORE "Build asiofi library." ON)
-cmake_dependent_option(BUILD_TESTING "Build tests." OFF "BUILD_CORE" OFF)
+include(${PROJECT_NAME}BuildOption)
+build_option(BUILD_CORE "Build asiofi library." DEFAULT ON)
+build_option(BUILD_TESTING "Build tests." DEFAULT OFF REQUIRES "BUILD_CORE")
 ################################################################################
 
 
 # Dependencies #################################################################
-if(BUILD_CORE)
-  set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
-  set(THREADS_PREFER_PTHREAD_FLAG TRUE)
-  find_package(Threads REQUIRED)
+include(FairCMakeModules)
+include(FairFindPackage2)
 
-  if(NOT DEFINED Boost_NO_BOOST_CMAKE AND CMAKE_VERSION VERSION_LESS 3.15)
-    # Since Boost 1.70 a CMake package is shipped by default. Unfortunately, it has a number
-    # of problems that are only fixed in Boost 1.71 or CMake 3.15. By default we skip the
-    # BoostConfig lookup. This can be overridden on the command line via -DBoost_NO_BOOST_CMAKE=OFF
-    set(Boost_NO_BOOST_CMAKE ON)
-  endif()
+if(BUILD_CORE)
+  find_package2(PUBLIC Threads REQUIRED)
+  set(Threads_PREFIX "<unknown system prefix>")
+
   # workaround bug https://github.com/boostorg/boost_install/issues/5
   set(__org ${BUILD_SHARED_LIBS})
   set(BUILD_SHARED_LIBS ON)
@@ -83,8 +78,9 @@ if(BUILD_CORE)
   )
 
   # Define the library
-  add_library(asiofi INTERFACE)
-  target_link_libraries(asiofi
+  set(target asiofi)
+  add_library(${target} INTERFACE)
+  target_link_libraries(${target}
     INTERFACE
     Boost::boost
     Threads::Threads
@@ -92,18 +88,19 @@ if(BUILD_CORE)
     OFI::libfabric
     ${FOLLY_DEP}
   )
-  target_include_directories(asiofi INTERFACE
+  target_compile_features(${target} INTERFACE cxx_std_17)
+  target_include_directories(${target} INTERFACE
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:include>
   )
-  target_compile_definitions(asiofi INTERFACE BOOST_ERROR_CODE_HEADER_ONLY)
+  target_compile_definitions(${target} INTERFACE BOOST_ERROR_CODE_HEADER_ONLY)
 
   # workaround https://github.com/boostorg/asio/commit/43874d5497414c67655d901e48c939ef01337edb
   if (    ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
       AND ("${CMAKE_CXX_COMPILER_VERSION}" VERSION_GREATER "10.0.0"))
     if ("${Boost_VERSION}" VERSION_LESS "106900")
-      target_compile_definitions(asiofi INTERFACE
+      target_compile_definitions(${target} INTERFACE
         BOOST_ASIO_HAS_STD_STRING_VIEW)
     endif()
   endif()
@@ -129,8 +126,8 @@ endif()
 # Installation #################################################################
 if(BUILD_CORE)
   install(TARGETS asiofi ${FOLLY_INTERN}
-    EXPORT ${asiofi_EXPORT_SET}
-    DESTINATION ${asiofi_INSTALL_LIBDIR}
+    EXPORT ${PROJECT_EXPORT_SET}
+    DESTINATION ${PROJECT_INSTALL_LIBDIR}
   )
   install(DIRECTORY
     include/${PROJECT_NAME_LOWER}
@@ -148,79 +145,25 @@ if(BUILD_CORE)
       DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME_LOWER}
     )
   endif()
+  install(FILES cmake/FindOFI.cmake
+    DESTINATION ${PROJECT_INSTALL_CMAKEMODDIR}
+  )
 
-  install_asiofi_cmake_package()
+  include(asiofiPackage)
+  install_cmake_package()
 endif()
 ################################################################################
 
 
 # Summary ######################################################################
-if(PROJECT_PACKAGE_DEPENDENCIES)
-  message(STATUS "  ")
-  message(STATUS "  ${Cyan}DEPENDENCY FOUND   VERSION                      PREFIX${CR}")
-  foreach(dep IN LISTS PROJECT_PACKAGE_DEPENDENCIES)
-    if(${dep} STREQUAL Boost)
-      if(DEFINED Boost_VERSION_STRING)
-        set(_version "${Boost_VERSION_STRING}")
-      elseif(DEFINED Boost_MAJOR_VERSION)
-        set(_version "${Boost_MAJOR_VERSION}.${Boost_MINOR_VERSION}.${Boost_SUBMINOR_VERSION}")
-      else()
-        set(_version "${Boost_VERSION}")
-      endif()
-      set(version_str "${BGreen}${_version}${CR}")
-    elseif(${dep}_VERSION)
-      set(version_str "${BGreen}${${dep}_VERSION}${CR}")
-    else()
-      set(version_str "${BYellow}unknown${CR}")
-    endif()
-    if(PROJECT_${dep}_VERSION)
-      set(version_req_str " (>= ${PROJECT_${dep}_VERSION})")
-    endif()
-    pad(${dep} 18 " " dep_padded)
-    if(DISABLE_COLOR)
-      pad("${version_str}${version_req_str}" 28 " " version_padded)
-    else()
-      pad("${version_str}${version_req_str}" 28 " " version_padded COLOR 1)
-    endif()
-    if(${dep} STREQUAL OFI)
-      get_filename_component(prefix ${${dep}_INCLUDE_DIRS}/.. ABSOLUTE)
-    elseif(${dep} STREQUAL Boost)
-      get_target_property(prefix Boost::boost INTERFACE_INCLUDE_DIRECTORIES)
-      get_filename_component(prefix ${prefix}/.. ABSOLUTE)
-    elseif(${dep} STREQUAL benchmark)
-      get_target_property(benchmark_lib benchmark::benchmark INTERFACE_LOCATION)
-      get_filename_component(prefix ${benchmark_lib} DIRECTORY)
-      get_filename_component(prefix ${prefix}/.. ABSOLUTE)
-    elseif(${dep} STREQUAL folly)
-      if (FOLLY_EXTERN)
-        get_target_property(folly_lib ${FOLLY_EXTERN} INTERFACE_LOCATION)
-        get_filename_component(prefix ${folly_lib} DIRECTORY)
-        get_filename_component(prefix ${prefix}/.. ABSOLUTE)
-      else()
-        set(prefix "internal copy (folly::Function only)")
-      endif()
-    else()
-      get_filename_component(prefix ${${dep}_INCLUDE_DIR}/.. ABSOLUTE)
-    endif()
-    message(STATUS "  ${BWhite}${dep_padded}${CR}${version_padded}${prefix}")
-    unset(version_str)
-    unset(version_padded)
-    unset(version_req_str)
-  endforeach()
-endif()
-message(STATUS "  ")
-message(STATUS "  ${Cyan}COMPONENT  BUILT?  INFO${CR}")
-if(BUILD_CORE)
-  set(core_summary "${BGreen}YES${CR}")
-else()
-  set(core_summary "${BRed} NO${CR}")
-endif()
-message(STATUS "  ${BWhite}core${CR}        ${core_summary}")
-if(BUILD_TESTING)
-  set(tests_summary "${BGreen}YES${CR}    (disable with ${BMagenta}-DBUILD_TESTING=OFF${CR})")
-else()
-  set(tests_summary "${BRed} NO${CR}    (default, enable with ${BMagenta}-DBUILD_TESTING=ON${CR})")
-endif()
-message(STATUS "  ${BWhite}tests${CR}       ${tests_summary}")
+include(asiofiSummary)
+
+message(STATUS "${BWhite}${PROJECT_NAME}${CR} ${PROJECT_GIT_VERSION} from ${PROJECT_DATE}")
+fair_summary_global_cxx_flags_standard()
+fair_summary_build_types()
+fair_summary_package_dependencies()
+asiofi_summary_components()
+asiofi_summary_install_prefix()
 message(STATUS "  ")
 ################################################################################
+

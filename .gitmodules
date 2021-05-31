@@ -1,0 +1,3 @@
+[submodule "extern/FairCMakeModules"]
+	path = extern/FairCMakeModules
+	url = https://github.com/FairRootGroup/FairCMakeModules

@@ -1,32 +1,29 @@
 ################################################################################
-#    Copyright (C) 2018 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    #
+# Copyright (C) 2018-2021 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  #
 #                                                                              #
 #              This software is distributed under the terms of the             #
 #              GNU Lesser General Public Licence (LGPL) version 3,             #
 #                  copied verbatim in the file "LICENSE"                       #
 ################################################################################
 
-cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
-
 @PACKAGE_INIT@
 
 ### General variables for project discovery/inspection
-set(ASIOFI_VERSION @PROJECT_VERSION@)
-set(ASIOFI_GIT_VERSION @ASIOFI_GIT_VERSION@)
+set(@PROJECT_NAME@_VERSION @PROJECT_VERSION@)
+set(@PROJECT_NAME@_GIT_VERSION @PROJECT_GIT_VERSION@)
+set(@PROJECT_NAME@_GIT_DATE @PROJECT_GIT_DATE@)
 
-set_and_check(asiofi_ROOT @PACKAGE_CMAKE_INSTALL_PREFIX@)
-set(asiofi_BINDIR @PACKAGE_CMAKE_INSTALL_PREFIX@/@asiofi_INSTALL_BINDIR@)
-set_and_check(asiofi_INCDIR @PACKAGE_CMAKE_INSTALL_PREFIX@/@asiofi_INSTALL_INCDIR@)
-# set_and_check(asiofi_LIBDIR @PACKAGE_CMAKE_INSTALL_PREFIX@/@asiofi_INSTALL_LIBDIR@)
-set(asiofi_DATADIR @PACKAGE_CMAKE_INSTALL_PREFIX@/@asiofi_INSTALL_DATADIR@)
-set_and_check(asiofi_CMAKEMODDIR @PACKAGE_CMAKE_INSTALL_PREFIX@/@asiofi_INSTALL_CMAKEMODDIR@)
+set(@PROJECT_NAME@_PREFIX @PACKAGE_CMAKE_INSTALL_PREFIX@)
+set(@PROJECT_NAME@_BINDIR @PACKAGE_CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_BINDIR@)
+set(@PROJECT_NAME@_INCDIR @PACKAGE_CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_INCLUDEDIR@)
+set(@PROJECT_NAME@_CMAKEMODDIR @PACKAGE_CMAKE_INSTALL_PREFIX@/@PROJECT_INSTALL_CMAKEMODDIR@)
 
 ### Import cmake modules
-set(CMAKE_MODULE_PATH ${asiofi_CMAKEMODDIR} ${CMAKE_MODULE_PATH})
+list(PREPEND CMAKE_MODULE_PATH ${@PROJECT_NAME@_CMAKEMODDIR})
 
 @PACKAGE_DEPENDENCIES@
 
 ### Import targets
-include(@PACKAGE_CMAKE_INSTALL_PREFIX@/@PACKAGE_INSTALL_DESTINATION@/asiofiTargets.cmake)
+include(@PACKAGE_CMAKE_INSTALL_PREFIX@/@PACKAGE_INSTALL_DESTINATION@/@PROJECT_EXPORT_SET@.cmake)
 
 @PACKAGE_COMPONENTS@
