@@ -41,7 +41,7 @@ if(BUILD_CORE)
   set(__org ${BUILD_SHARED_LIBS})
   set(BUILD_SHARED_LIBS ON)
   find_package2(PUBLIC Boost VERSION 1.70 REQUIRED
-    COMPONENTS program_options container)
+    COMPONENTS program_options)
   set(BUILD_SHARED_LIBS ${__org})
   find_package2(PUBLIC OFI VERSION 1.6.0 REQUIRED
     COMPONENTS fi_sockets)
@@ -64,7 +64,6 @@ if(BUILD_CORE)
     INTERFACE
     Boost::boost
     Threads::Threads
-    Boost::container
     OFI::libfabric
   )
   target_compile_features(${target} INTERFACE cxx_std_17)

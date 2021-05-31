@@ -1,5 +1,5 @@
 /********************************************************************************
- *    Copyright (C) 2018 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    *
+ * Copyright (C) 2018-2021 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
  *                                                                              *
  *              This software is distributed under the terms of the             *
  *              GNU Lesser General Public Licence (LGPL) version 3,             *
@@ -11,13 +11,10 @@
 
 #include <asiofi/memory_region.hpp>
 #include <atomic>
-#include <boost/container/pmr/global_resource.hpp>
-#include <boost/container/pmr/memory_resource.hpp>
-#include <boost/container/pmr/monotonic_buffer_resource.hpp>
-#include <boost/container/pmr/synchronized_pool_resource.hpp>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <memory_resource>
 #include <sys/mman.h>
 #include <unordered_set>
 #include <utility>
@@ -28,10 +25,10 @@ namespace asiofi
 
 /**
  * @struct allocated_pool_resource allocators.hpp <asiofi/memory_resources.hpp>
- * @brief Works just like boost::container::pmr::synchronized_pool_resource, but physically
+ * @brief Works just like std::pmr::synchronized_pool_resource, but physically
  *        allocates new buffers.
  */
-struct allocated_pool_resource : boost::container::pmr::synchronized_pool_resource
+struct allocated_pool_resource : std::pmr::synchronized_pool_resource
 {
   allocated_pool_resource()
   : synchronized_pool_resource()
@@ -49,7 +46,7 @@ struct allocated_pool_resource : boost::container::pmr::synchronized_pool_resour
   protected:
   auto do_allocate(std::size_t bytes, std::size_t alignment) -> void* override
   {
-    auto ptr = boost::container::pmr::synchronized_pool_resource::do_allocate(bytes, alignment);
+    auto ptr = std::pmr::synchronized_pool_resource::do_allocate(bytes, alignment);
 
     if (m_allocated.insert(ptr).second) {
       std::memset(ptr, 0, bytes); // TODO see if we need stronger page pinning here
@@ -65,7 +62,7 @@ struct allocated_pool_resource : boost::container::pmr::synchronized_pool_resour
 
   auto do_deallocate(void* p, std::size_t bytes, std::size_t alignment) -> void override
   {
-    boost::container::pmr::synchronized_pool_resource::do_deallocate(p, bytes, alignment);
+    std::pmr::synchronized_pool_resource::do_deallocate(p, bytes, alignment);
 
     // std::cout << "deallocated: ptr=" << p << ", size=" << bytes << std::endl;
   }
@@ -85,11 +82,11 @@ struct allocated_pool_resource : boost::container::pmr::synchronized_pool_resour
  * @brief Works just like monotonic memory resource, but adds mlock and OFI
  *        memory region registration to the first upstream allocation.
  */
-struct registered_memory_resource : boost::container::pmr::memory_resource
+struct registered_memory_resource : std::pmr::memory_resource
 {
   registered_memory_resource(const asiofi::domain& domain,
       std::size_t size,
-      boost::container::pmr::memory_resource* upstream = boost::container::pmr::get_default_resource())
+      std::pmr::memory_resource* upstream = std::pmr::get_default_resource())
   : m_ptr(upstream->allocate(size))
   , m_size(size)
   , m_region(create_region(domain))
@@ -128,7 +125,7 @@ struct registered_memory_resource : boost::container::pmr::memory_resource
   void* m_ptr;
   std::size_t m_size;
   asiofi::memory_region m_region;
-  boost::container::pmr::monotonic_buffer_resource m_upstream;
+  std::pmr::monotonic_buffer_resource m_upstream;
 
   auto create_region(const asiofi::domain& domain) -> asiofi::memory_region
   {
