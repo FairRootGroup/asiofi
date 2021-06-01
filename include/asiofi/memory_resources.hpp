@@ -9,6 +9,7 @@
 #ifndef ASIOFI_MEMORY_RESOURCES_HPP
 #define ASIOFI_MEMORY_RESOURCES_HPP
 
+#include <asio/buffer.hpp>
 #include <asiofi/memory_region.hpp>
 #include <atomic>
 #include <cstring>
@@ -131,7 +132,7 @@ struct registered_memory_resource : std::pmr::memory_resource
   {
     mlock(m_ptr, m_size);
     return asiofi::memory_region(domain,
-            boost::asio::mutable_buffer(m_ptr, m_size),
+            asio::mutable_buffer(m_ptr, m_size),
             asiofi::mr::access::recv | asiofi::mr::access::send);
   }
 }; /* struct registered_memory_resource */

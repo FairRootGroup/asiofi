@@ -1,5 +1,5 @@
 /********************************************************************************
- *    Copyright (C) 2019 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    *
+ * Copyright (C) 2019-2021 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
  *                                                                              *
  *              This software is distributed under the terms of the             *
  *              GNU Lesser General Public Licence (LGPL) version 3,             *
@@ -9,15 +9,16 @@
 #ifndef ASIOFI_COMPLETION_QUEUE_HPP
 #define ASIOFI_COMPLETION_QUEUE_HPP
 
-#include <asiofi/errno.hpp>
-#include <asiofi/domain.hpp>
+#include <asio/io_context.hpp>
+#include <asio/posix/stream_descriptor.hpp>
+#include <asio/post.hpp>
 #include <asiofi/detail/get_native_wait_fd.hpp>
 #include <asiofi/detail/handler_queue.hpp>
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/post.hpp>
-#include <boost/asio/posix/stream_descriptor.hpp>
+#include <asiofi/domain.hpp>
+#include <asiofi/errno.hpp>
 #include <memory>
 #include <rdma/fi_domain.h>
+#include <system_error>
 #include <utility>
 
 namespace asiofi
@@ -40,9 +41,7 @@ namespace asiofi
       tx
     };
 
-    explicit completion_queue(boost::asio::io_context& ctx,
-                              direction dir,
-                              const domain& domain)
+    explicit completion_queue(asio::io_context& ctx, direction dir, const domain& domain)
       : m_domain(domain)
       , m_completion_queue(
           create_completion_queue(dir, domain.get_info(), domain, m_context))
@@ -78,8 +77,8 @@ namespace asiofi
     fi_context m_context;
     const domain& m_domain;
     std::unique_ptr<fid_cq, fid_cq_deleter> m_completion_queue;
-    boost::asio::io_context& m_io_context;
-    boost::asio::posix::stream_descriptor m_cq_fd;
+    asio::io_context& m_io_context;
+    asio::posix::stream_descriptor m_cq_fd;
     asiofi::detail::handler_queue m_read_handler_queue;
 
     auto post_reader() -> void
@@ -89,21 +88,20 @@ namespace asiofi
       if (rc == FI_SUCCESS) {
         // std::cout << "wait on fd" << std::endl;
         m_cq_fd.async_wait(
-          boost::asio::posix::stream_descriptor::wait_read,
+          asio::posix::stream_descriptor::wait_read,
           std::move(
             std::bind(&completion_queue::reader, this, std::placeholders::_1, true)));
         // call trywait again to make sure, we do not miss the notification
-        // reader(boost::system::error_code(), false);
+        // reader(std::error_code(), false);
         // rc = fi_trywait(get_wrapped_obj(m_domain.get_fabric()), &wait_obj, 1);
         // assert(rc == FI_SUCCESS);
       } else {
         // std::cout << "call" << std::endl;
-        // reader(boost::system::error_code());
+        // reader(std::error_code());
         // std::cout << "post" << std::endl;
-        boost::asio::post(
+        asio::post(
           m_io_context,
-          std::move(std::bind(
-            &completion_queue::reader, this, boost::system::error_code(), true)));
+          std::move(std::bind(&completion_queue::reader, this, std::error_code(), true)));
       }
     }
 
@@ -137,7 +135,7 @@ namespace asiofi
       }
     }
 
-    auto reader(const boost::system::error_code& error, bool continuation = true) -> void
+    auto reader(const std::error_code& error, bool continuation = true) -> void
     {
       if (!error) {
         // struct fi_cq_entry {

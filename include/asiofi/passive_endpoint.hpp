@@ -1,5 +1,5 @@
 /********************************************************************************
- *    Copyright (C) 2018 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    *
+ * Copyright (C) 2018-2021 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
  *                                                                              *
  *              This software is distributed under the terms of the             *
  *              GNU Lesser General Public Licence (LGPL) version 3,             *
@@ -10,12 +10,12 @@
 #define ASIOFI_PASSIVE_ENDPOINT_HPP
 
 #include <arpa/inet.h>
+#include <asio/bind_executor.hpp>
+#include <asio/io_context.hpp>
 #include <asiofi/errno.hpp>
 #include <asiofi/event_queue.hpp>
 #include <asiofi/fabric.hpp>
 #include <atomic>
-#include <boost/asio/bind_executor.hpp>
-#include <boost/asio/io_context.hpp>
 #include <cassert>
 #include <functional>
 #include <iostream>
@@ -36,12 +36,12 @@ namespace asiofi
     friend auto get_wrapped_obj(const passive_endpoint& pep) -> fid_pep* { return pep.m_pep.get(); }
 
     /// ctor #1
-    explicit passive_endpoint(boost::asio::io_context& io_context, const fabric& fabric)
-    : m_fabric(fabric)
-    , m_io_context(io_context)
-    , m_eq(io_context, fabric)
-    , m_pep(create_passive_endpoint(fabric, m_context))
-    , m_listening(false)
+    explicit passive_endpoint(asio::io_context& io_context, const fabric& fabric)
+      : m_fabric(fabric)
+      , m_io_context(io_context)
+      , m_eq(io_context, fabric)
+      , m_pep(create_passive_endpoint(fabric, m_context))
+      , m_listening(false)
     {
       // bind event queue to passive connected_endpoint registering for connection requests
       bind(m_eq, passive_endpoint::eq_flag::connreq);
@@ -129,12 +129,13 @@ namespace asiofi
 
     const fabric& m_fabric;
     fi_context m_context;
-    boost::asio::io_context& m_io_context;
+    asio::io_context& m_io_context;
     event_queue m_eq;
     std::unique_ptr<fid_pep, fid_pep_deleter> m_pep;
     std::atomic<bool> m_listening;
 
-    static auto create_passive_endpoint(const fabric& fabric, fi_context& context) -> std::unique_ptr<fid_pep, fid_pep_deleter> 
+    static auto create_passive_endpoint(const fabric& fabric, fi_context& context)
+      -> std::unique_ptr<fid_pep, fid_pep_deleter>
     {
       fid_pep* pep;
       auto rc = fi_passive_ep(get_wrapped_obj(fabric),

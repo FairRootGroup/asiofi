@@ -7,17 +7,17 @@
  ********************************************************************************/
 
 // #define BOOST_ASIO_ENABLE_HANDLER_TRACKING
-#include <asiofi.hpp>
-#include <boost/asio/buffer.hpp>
-#include <boost/asio/dispatch.hpp>
-#include <boost/asio/executor_work_guard.hpp>
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/post.hpp>
-#include <boost/asio/signal_set.hpp>
-#include <chrono>
 #include <CLI/App.hpp>
 #include <CLI/Config.hpp>
 #include <CLI/Formatter.hpp>
+#include <asio/buffer.hpp>
+#include <asio/dispatch.hpp>
+#include <asio/executor_work_guard.hpp>
+#include <asio/io_context.hpp>
+#include <asio/post.hpp>
+#include <asio/signal_set.hpp>
+#include <asiofi.hpp>
+#include <chrono>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
@@ -25,6 +25,7 @@
 #include <queue>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <vector>
 
@@ -104,11 +105,10 @@ auto msg_bw(const bool is_server,
             const bool is_multi_threaded,
             const bool emulate_control_band) -> int
 {
-  boost::asio::io_context io_context;
-  boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
-  signals.async_wait([&](const boost::system::error_code& error, int signal_number) {
-      io_context.stop();
-  });
+  asio::io_context io_context;
+  asio::signal_set signals(io_context, SIGINT, SIGTERM);
+  signals.async_wait(
+    [&](const std::error_code& error, int signal_number) { io_context.stop(); });
 
   asiofi::hints hints;
   hints.set_provider(provider);
@@ -137,8 +137,8 @@ auto msg_bw(const bool is_server,
 
   asiofi::registered_memory_resource pmr(domain, message_size + 1024);
   const auto desc = pmr.get_region().desc();
-  boost::asio::mutable_buffer buffer(pmr.allocate(message_size), message_size);
-  boost::asio::mutable_buffer ctrl_buffer(pmr.allocate(1024), 1024);
+  asio::mutable_buffer buffer(pmr.allocate(message_size), message_size);
+  asio::mutable_buffer ctrl_buffer(pmr.allocate(1024), 1024);
 
   std::function<void()> post_buffers;
   std::function<void()> mt_main_thread;
@@ -149,7 +149,7 @@ auto msg_bw(const bool is_server,
   asiofi::synchronized_semaphore queue_push(io_context, queue_size);
   asiofi::synchronized_semaphore queue_pop(io_context, 0);
   std::mutex queue_mtx;
-  std::queue<boost::asio::mutable_buffer> queue;
+  std::queue<asio::mutable_buffer> queue;
 
   if (is_server) {
       std::cout << "SERVER" << std::endl;
@@ -165,10 +165,10 @@ auto msg_bw(const bool is_server,
           lk.unlock();
 
           if (emulate_control_band) {
-            ctrl_endpoint->send(ctrl_buffer, desc, [](boost::asio::mutable_buffer){});
+            ctrl_endpoint->send(ctrl_buffer, desc, [](asio::mutable_buffer) {});
           }
 
-          endpoint->send(buffer2, desc, [&](boost::asio::mutable_buffer buffer3) {
+          endpoint->send(buffer2, desc, [&](asio::mutable_buffer buffer3) {
             if (completed == 0) {
               start = std::chrono::steady_clock::now();
             }
@@ -183,7 +183,7 @@ auto msg_bw(const bool is_server,
             }
           });
 
-          boost::asio::dispatch(io_context, post_buffers);
+          asio::dispatch(io_context, post_buffers);
         });
       };
 
@@ -207,10 +207,10 @@ auto msg_bw(const bool is_server,
       post_buffers = [&]() {
         sem.async_wait([&]() {
           if (emulate_control_band) {
-            ctrl_endpoint->send(ctrl_buffer, desc, [](boost::asio::mutable_buffer) {});
+            ctrl_endpoint->send(ctrl_buffer, desc, [](asio::mutable_buffer) {});
           }
 
-          endpoint->send(buffer, desc, [&](boost::asio::mutable_buffer buffer) {
+          endpoint->send(buffer, desc, [&](asio::mutable_buffer buffer) {
             if (completed == 0) {
               start = std::chrono::steady_clock::now();
             }
@@ -227,7 +227,7 @@ auto msg_bw(const bool is_server,
           });
           ++initiated;
           if (initiated < iterations) {
-            boost::asio::dispatch(io_context, post_buffers);
+            asio::dispatch(io_context, post_buffers);
           }
         });
       };
@@ -250,12 +250,12 @@ auto msg_bw(const bool is_server,
             ctrl_endpoint->enable();
             ctrl_endpoint->accept([&] {
               std::cout << "accept2" << std::endl;
-              boost::asio::dispatch(io_context, post_buffers);
+              asio::dispatch(io_context, post_buffers);
             });
           });
         } else {
           std::cout << "accept1" << std::endl;
-          boost::asio::dispatch(io_context, post_buffers);
+          asio::dispatch(io_context, post_buffers);
         }
       });
     });
@@ -278,10 +278,10 @@ auto msg_bw(const bool is_server,
           }
 
           if (emulate_control_band) {
-            ctrl_endpoint->recv(ctrl_buffer, desc, [&](boost::asio::mutable_buffer){
+            ctrl_endpoint->recv(ctrl_buffer, desc, [&](asio::mutable_buffer) {
               sem.signal();
               sem2.async_wait([&]() {
-                endpoint->recv(buffer, desc, [&](boost::asio::mutable_buffer buffer) {
+                endpoint->recv(buffer, desc, [&](asio::mutable_buffer buffer) {
                   ++completed;
                   sem2.signal();
 
@@ -294,12 +294,12 @@ auto msg_bw(const bool is_server,
                 });
                 ++initiated;
                 if (initiated < iterations) {
-                  boost::asio::dispatch(io_context, post_buffers);
+                  asio::dispatch(io_context, post_buffers);
                 }
               });
             });
           } else {
-            endpoint->recv(buffer, desc, [&](boost::asio::mutable_buffer buffer) {
+            endpoint->recv(buffer, desc, [&](asio::mutable_buffer buffer) {
               ++completed;
               sem.signal();
 
@@ -312,7 +312,7 @@ auto msg_bw(const bool is_server,
             });
             ++initiated;
             if (initiated < iterations) {
-              boost::asio::dispatch(io_context, post_buffers);
+              asio::dispatch(io_context, post_buffers);
             }
           }
         });

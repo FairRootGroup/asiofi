@@ -1,5 +1,5 @@
 /********************************************************************************
- *    Copyright (C) 2018 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    *
+ * Copyright (C) 2018-2021 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
  *                                                                              *
  *              This software is distributed under the terms of the             *
  *              GNU Lesser General Public Licence (LGPL) version 3,             *
@@ -11,7 +11,6 @@
 
 #include <asiofi/errno.hpp>
 #include <asiofi/fabric.hpp>
-#include <boost/asio/buffer.hpp>
 #include <functional>
 #include <iostream>
 #include <memory>

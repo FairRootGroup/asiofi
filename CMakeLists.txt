@@ -38,13 +38,9 @@ if(BUILD_CORE)
   find_package2(PUBLIC Threads REQUIRED)
   set(Threads_PREFIX "<unknown system prefix>")
 
-  # workaround bug https://github.com/boostorg/boost_install/issues/5
-  set(__org ${BUILD_SHARED_LIBS})
-  set(BUILD_SHARED_LIBS ON)
-  find_package2(PUBLIC Boost VERSION 1.70 REQUIRED)
-  set(BUILD_SHARED_LIBS ${__org})
-  find_package2(PUBLIC OFI VERSION 1.6.0 REQUIRED
-    COMPONENTS fi_sockets)
+  find_package2(PUBLIC OFI VERSION 1.6.0 REQUIRED COMPONENTS fi_sockets)
+
+  find_package2(PUBLIC asio VERSION 1.18 REQUIRED)
 endif()
 
 if(BUILD_TESTING)
@@ -72,9 +68,9 @@ if(BUILD_CORE)
   add_library(${target} INTERFACE)
   target_link_libraries(${target}
     INTERFACE
-    Boost::boost
     Threads::Threads
     OFI::libfabric
+    asio::asio
   )
   target_compile_features(${target} INTERFACE cxx_std_17)
   target_include_directories(${target} INTERFACE
@@ -82,16 +78,6 @@ if(BUILD_CORE)
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:include>
   )
-  target_compile_definitions(${target} INTERFACE BOOST_ERROR_CODE_HEADER_ONLY)
-
-  # workaround https://github.com/boostorg/asio/commit/43874d5497414c67655d901e48c939ef01337edb
-  if (    ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
-      AND ("${CMAKE_CXX_COMPILER_VERSION}" VERSION_GREATER "10.0.0"))
-    if ("${Boost_VERSION}" VERSION_LESS "106900")
-      target_compile_definitions(${target} INTERFACE
-        BOOST_ASIO_HAS_STD_STRING_VIEW)
-    endif()
-  endif()
 endif()
 
 # Add fabtests

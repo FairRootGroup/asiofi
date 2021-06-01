@@ -1,5 +1,5 @@
 /********************************************************************************
- *    Copyright (C) 2018 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    *
+ * Copyright (C) 2018-2021 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
  *                                                                              *
  *              This software is distributed under the terms of the             *
  *              GNU Lesser General Public Licence (LGPL) version 3,             *
@@ -9,13 +9,14 @@
 #ifndef ASIOFI_EVENT_QUEUE_HPP
 #define ASIOFI_EVENT_QUEUE_HPP
 
+#include <asio/bind_executor.hpp>
+#include <asio/dispatch.hpp>
+#include <asio/io_context.hpp>
+#include <asio/posix/stream_descriptor.hpp>
 #include <asiofi/detail/get_native_wait_fd.hpp>
 #include <asiofi/fabric.hpp>
-#include <boost/asio/bind_executor.hpp>
-#include <boost/asio/dispatch.hpp>
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/posix/stream_descriptor.hpp>
 #include <rdma/fi_domain.h>
+#include <system_error>
 
 namespace asiofi
 {
@@ -33,7 +34,7 @@ namespace asiofi
       return eq.m_event_queue.get();
     }
 
-    explicit event_queue(boost::asio::io_context& io_context, const fabric& fabric)
+    explicit event_queue(asio::io_context& io_context, const fabric& fabric)
       : m_fabric(fabric)
       , m_event_queue(create_event_queue(fabric, m_context))
       , m_io_context(io_context)
@@ -92,7 +93,7 @@ namespace asiofi
         }
       }
 
-      auto operator()(const boost::system::error_code& error = boost::system::error_code()) -> void
+      auto operator()(const std::error_code& error = std::error_code()) -> void
       {
         if (!error) {
           // fi_eq_cm_entry {
@@ -131,12 +132,14 @@ namespace asiofi
     {
       auto wait_obj = &m_event_queue.get()->fid;
       auto rc = fi_trywait(get_wrapped_obj(m_fabric), &wait_obj, 1);
-      auto ex = boost::asio::get_associated_executor(handler, m_io_context);
-      auto read_handler = boost::asio::bind_executor(ex, read_op<>(m_event_queue.get(), std::move(handler)));
+      auto ex = asio::get_associated_executor(handler, m_io_context);
+      auto read_handler =
+        asio::bind_executor(ex, read_op<>(m_event_queue.get(), std::move(handler)));
       if (rc == FI_SUCCESS) {
-        m_eq_fd.async_wait(boost::asio::posix::stream_descriptor::wait_read, std::move(read_handler));
+        m_eq_fd.async_wait(asio::posix::stream_descriptor::wait_read,
+                           std::move(read_handler));
       } else {
-        boost::asio::dispatch(ex, std::move(read_handler));
+        asio::dispatch(ex, std::move(read_handler));
       }
     }
 
@@ -146,8 +149,8 @@ namespace asiofi
     fi_context m_context;
     const fabric& m_fabric;
     std::unique_ptr<fid_eq, fid_eq_deleter> m_event_queue;
-    boost::asio::io_context& m_io_context;
-    boost::asio::posix::stream_descriptor m_eq_fd;
+    asio::io_context& m_io_context;
+    asio::posix::stream_descriptor m_eq_fd;
 
     static auto create_event_queue(const fabric& fabric, fi_context& context) -> std::unique_ptr<fid_eq, fid_eq_deleter>
     {

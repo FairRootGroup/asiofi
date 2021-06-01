@@ -9,10 +9,10 @@
 #ifndef ASIOFI_SEMAPHORE_HPP
 #define ASIOFI_SEMAPHORE_HPP
 
-#include <asiofi/errno.hpp>
+#include <asio/dispatch.hpp>
+#include <asio/io_context.hpp>
 #include <asiofi/detail/function2.hpp>
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/dispatch.hpp>
+#include <asiofi/errno.hpp>
 #include <cassert>
 #include <condition_variable>
 #include <cstdint>
@@ -29,7 +29,7 @@ namespace asiofi {
    */
   struct unsynchronized_semaphore
   {
-    explicit unsynchronized_semaphore(boost::asio::io_context& ioc,
+    explicit unsynchronized_semaphore(asio::io_context& ioc,
                                       std::size_t initial_count = 1)
       : m_io_context(ioc)
       , m_count(initial_count)
@@ -41,7 +41,7 @@ namespace asiofi {
     {
       if (m_count > 0) {
         --m_count;
-        boost::asio::dispatch(m_io_context, std::move(handler));
+        asio::dispatch(m_io_context, std::move(handler));
       } else {
         if (!m_handler) {
           m_handler = std::move(handler);
@@ -68,15 +68,15 @@ namespace asiofi {
         // complete the waiting wait operation, then complete this operation
         auto tmp = std::move(m_handler);
         m_handler = nullptr;
-        boost::asio::dispatch(m_io_context,
-                              [waiting_completion = std::move(tmp),
-                               current_completion = std::move(handler)]() mutable {
-                                waiting_completion();
-                                current_completion();
-                              });
+        asio::dispatch(m_io_context,
+                       [waiting_completion = std::move(tmp),
+                        current_completion = std::move(handler)]() mutable {
+                         waiting_completion();
+                         current_completion();
+                       });
       } else {
         ++m_count;
-        boost::asio::dispatch(m_io_context, std::move(handler));
+        asio::dispatch(m_io_context, std::move(handler));
       }
     }
 
@@ -85,7 +85,7 @@ namespace asiofi {
       if (m_handler) {
         auto tmp = std::move(m_handler);
         m_handler = nullptr;
-        boost::asio::dispatch(m_io_context, std::move(tmp));
+        asio::dispatch(m_io_context, std::move(tmp));
       } else {
         ++m_count;
       }
@@ -97,7 +97,7 @@ namespace asiofi {
     }
 
   private:
-    boost::asio::io_context& m_io_context;
+    asio::io_context& m_io_context;
     std::size_t m_count;
     fu2::unique_function<void()> m_handler;
   };
@@ -111,8 +111,7 @@ namespace asiofi {
    */
   struct synchronized_semaphore
   {
-    explicit synchronized_semaphore(boost::asio::io_context& ioc,
-                                    std::size_t initial_count = 1)
+    explicit synchronized_semaphore(asio::io_context& ioc, std::size_t initial_count = 1)
       : m_io_context(ioc)
       , m_count(initial_count)
       , m_handler(nullptr)
@@ -126,7 +125,7 @@ namespace asiofi {
       if (m_count > 0) {
         --m_count;
         lk.unlock();
-        boost::asio::dispatch(m_io_context, std::move(handler));
+        asio::dispatch(m_io_context, std::move(handler));
       } else {
         if (!m_handler) {
           m_handler = std::move(handler);
@@ -159,17 +158,17 @@ namespace asiofi {
         m_handler = nullptr;
         lk.unlock();
         // complete the waiting wait operation, then complete this operation
-        boost::asio::dispatch(m_io_context,
-                              [waiting_completion = std::move(waiting),
-                               current_completion = std::move(handler)]() mutable {
-                                waiting_completion();
-                                current_completion();
-                              });
+        asio::dispatch(m_io_context,
+                       [waiting_completion = std::move(waiting),
+                        current_completion = std::move(handler)]() mutable {
+                         waiting_completion();
+                         current_completion();
+                       });
       } else {
         ++m_count;
         lk.unlock();
         m_cv.notify_one();
-        boost::asio::dispatch(m_io_context, std::move(handler));
+        asio::dispatch(m_io_context, std::move(handler));
       }
     }
 
@@ -182,7 +181,7 @@ namespace asiofi {
         m_handler = nullptr;
         lk.unlock();
         // complete the waiting signal operation
-        boost::asio::dispatch(m_io_context, std::move(waiting));
+        asio::dispatch(m_io_context, std::move(waiting));
       } else {
         ++m_count;
         lk.unlock();
@@ -197,7 +196,7 @@ namespace asiofi {
     }
 
   private:
-    boost::asio::io_context& m_io_context;
+    asio::io_context& m_io_context;
     std::size_t m_count;
     fu2::unique_function<void()> m_handler;
     std::mutex m_mutex;

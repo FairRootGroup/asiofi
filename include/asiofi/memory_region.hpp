@@ -9,6 +9,7 @@
 #ifndef ASIOFI_MEMORY_REGION
 #define ASIOFI_MEMORY_REGION
 
+#include <asio/buffer.hpp>
 #include <asiofi/errno.hpp>
 #include <asiofi/domain.hpp>
 #include <functional>
@@ -41,7 +42,7 @@ namespace asiofi {
     }
 
     explicit memory_region(const domain& domain,
-                           boost::asio::mutable_buffer buffer,
+                           asio::mutable_buffer buffer,
                            access access)
       : m_memory_region(
           std::move(create_memory_region(domain, buffer, access, m_context.get())))
@@ -71,7 +72,7 @@ namespace asiofi {
     std::shared_ptr<fid_mr> m_memory_region;
 
     static auto create_memory_region(const domain& domain,
-                                     boost::asio::mutable_buffer buffer,
+                                     asio::mutable_buffer buffer,
                                      access access,
                                      fi_context* context)
       -> std::unique_ptr<fid_mr, fid_mr_deleter>
