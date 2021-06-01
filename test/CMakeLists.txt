@@ -7,7 +7,7 @@
 ################################################################################
 
 add_executable(afi_msg_bw benchmarks/msg_bw.cpp)
-target_link_libraries(afi_msg_bw PUBLIC asiofi Boost::program_options)
+target_link_libraries(afi_msg_bw PUBLIC asiofi CLI11::CLI11)
 
 # add_executable(malloc_bw benchmarks/malloc_bw.cpp)
 # target_link_libraries(malloc_bw PUBLIC benchmark::benchmark Boost::boost)

@@ -32,6 +32,7 @@ build_option(BUILD_TESTING "Build tests." DEFAULT OFF REQUIRES "BUILD_CORE")
 # Dependencies #################################################################
 include(FairCMakeModules)
 include(FairFindPackage2)
+include(asiofiBundlePackageHelper)
 
 if(BUILD_CORE)
   find_package2(PUBLIC Threads REQUIRED)
@@ -40,12 +41,21 @@ if(BUILD_CORE)
   # workaround bug https://github.com/boostorg/boost_install/issues/5
   set(__org ${BUILD_SHARED_LIBS})
   set(BUILD_SHARED_LIBS ON)
-  find_package2(PUBLIC Boost VERSION 1.70 REQUIRED
-    COMPONENTS program_options)
+  find_package2(PUBLIC Boost VERSION 1.70 REQUIRED)
   set(BUILD_SHARED_LIBS ${__org})
   find_package2(PUBLIC OFI VERSION 1.6.0 REQUIRED
     COMPONENTS fi_sockets)
 endif()
+
+if(BUILD_TESTING)
+  find_package2(BUNDLED CLI11 VERSION 1.9)
+  if(NOT CLI11_FOUND AND NOT CLI11_BUNDLED)
+    build_bundled(CLI11 extern/CLI11)
+    find_package2(PRIVATE CLI11 REQUIRED)
+  endif()
+endif()
+
+find_package2_implicit_dependencies()
 ################################################################################
 
 

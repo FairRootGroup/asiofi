@@ -1,5 +1,5 @@
 /********************************************************************************
- * Copyright (C) 2018-2019 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
+ * Copyright (C) 2018-2021 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
  *                                                                              *
  *              This software is distributed under the terms of the             *
  *              GNU Lesser General Public Licence (LGPL) version 3,             *
@@ -14,8 +14,10 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/asio/signal_set.hpp>
-#include <boost/program_options.hpp>
 #include <chrono>
+#include <CLI/App.hpp>
+#include <CLI/Config.hpp>
+#include <CLI/Formatter.hpp>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
@@ -26,59 +28,45 @@
 #include <thread>
 #include <vector>
 
-namespace bpo = boost::program_options;
-
 template<typename T, typename... Args>
 std::unique_ptr<T> make_unique(Args&&... args)
 {
     return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 }
 
-auto handle_cli(int argc, char** argv, bpo::variables_map& vm) -> void
-try {
-  bpo::options_description opts{"Options"};
-  opts.add_options()
-    ("help,h", "Help screen")
-    ("version,v", "Print version")
-    ("port,p", bpo::value<std::string>()->default_value("5000"), "Server port")
-    ("server,s", "Run server, otherwise client")
-    ("provider,P", bpo::value<std::string>()->default_value("sockets"), "Provider")
-    ("domain,D", bpo::value<std::string>()->default_value(""), "Domain (HCA)")
-    ("message-size,m", bpo::value<size_t>()->default_value(1024*1024), "Message size in Byte")
-    ("iterations,i", bpo::value<size_t>()->default_value(100), "Number of messages to transfer")
-    ("queue-size,q", bpo::value<size_t>()->default_value(10), "Maximum number of transfers to queue in parallel")
-    ("mt", "Multi-threaded mode")
-    ("ctrl", "Emulate a control band");
-  
-  bpo::options_description hidden;
-  hidden.add_options()
-    ("host", bpo::value<std::string>(), "Host to connect to");
-  
-  bpo::options_description all;
-  all.add(opts).add(hidden);
+auto handle_cli(int argc, char** argv, CLI::App& app) -> void
+{
+  app.add_option("host", "Host to bind on / connect to");
+  // app.add_option("-h,--help", "Help screen");
+  app.add_flag  ("-v,--version", "Print version");
+  app.add_option("-p,--port", "Server port")
+               ->default_val(5000)
+               ->check(CLI::PositiveNumber);
+  app.add_flag  ("-s,--server", "Run server, otherwise client");
+  app.add_option("-P,--provider", "Provider")
+               ->default_str("sockets");
+  app.add_option("-D,--domain", "Domain (HCA)")
+               ->default_str("");
+  app.add_option("-m,--message-size", "Message size in Byte")
+               ->default_val(1024*1024)
+               ->check(CLI::PositiveNumber);
+  app.add_option("-i,--iterations", "Number of messages to transfer")
+               ->default_val(100)
+               ->check(CLI::PositiveNumber);
+  app.add_option("-q,--queue-size", "Maximum number of transfers to queue in parallel")
+               ->default_val(10)
+               ->check(CLI::PositiveNumber);
+  app.add_flag  ("--mt", "Multi-threaded mode");
+  app.add_flag  ("--ctrl", "Emulate a control band");
 
-  bpo::positional_options_description pos_opts;
-  pos_opts.add("host", 1);
+  app.positionals_at_end(true);
 
-  bpo::store(bpo::command_line_parser(argc, argv).options(all).positional(pos_opts).run(), vm);
-  bpo::notify(vm);
+  app.parse(argc, argv);
 
-  if (vm.count("help")) {
-    std::cout << "Usage:" << std::endl;
-    std::cout << "  afi_msg_bw [OPTIONS] -s <ip>      Start server" << std::endl;
-    std::cout << "  afi_msg_bw [OPTIONS] <ip>         Connect to server" << std::endl;
-    std::cout << std::endl << "Bandwidth test for MSG endpoints." << std::endl << std::endl;
-    std::cout << opts << std::endl;
-    std::exit(EXIT_SUCCESS);
-  } else if (vm.count("version")) {
+  if (app["--version"]->as<bool>()) {
     std::cout << "asiofi " << ASIOFI_GIT_VERSION << std::endl;
     std::exit(EXIT_SUCCESS);
   }
-}
-catch (const bpo::error& ex)
-{
-  std::cerr << ex.what() << std::endl;
-  std::exit(EXIT_FAILURE);
 }
 
 auto
@@ -378,17 +366,22 @@ auto msg_bw(const bool is_server,
 
 auto main(int argc, char** argv) -> int
 {
-  bpo::variables_map vm;
-  handle_cli(argc, argv, vm);
+  CLI::App app("Bandwidth test for MSG endpoints\n", "afi_msg_bw");
 
-  return msg_bw(vm.count("server"),
-                vm["host"].as<std::string>(),
-                vm["port"].as<std::string>(),
-                vm["provider"].as<std::string>(),
-                vm["domain"].as<std::string>(),
-                vm["message-size"].as<size_t>(),
-                vm["iterations"].as<size_t>(),
-                vm["queue-size"].as<size_t>(),
-                vm.count("mt"),
-                vm.count("ctrl"));
+  try {
+    handle_cli(argc, argv, app);
+  } catch (CLI::ParseError const & e) {
+    return app.exit(e);
+  }
+
+  return msg_bw(app["--server"]->as<bool>(),
+                app["host"]->as<std::string>(),
+                app["--port"]->as<std::string>(),
+                app["--provider"]->as<std::string>(),
+                app["--domain"]->as<std::string>(),
+                app["--message-size"]->as<size_t>(),
+                app["--iterations"]->as<size_t>(),
+                app["--queue-size"]->as<size_t>(),
+                app["--mt"]->as<bool>(),
+                app["--ctrl"]->as<bool>());
 }

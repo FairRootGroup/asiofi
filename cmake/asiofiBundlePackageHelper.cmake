@@ -81,6 +81,16 @@ function(build_bundled package bundle)
     )
     exec(${CMAKE_COMMAND} --build ${${package}_BINARY_DIR})
     exec(${CMAKE_COMMAND} --build ${${package}_BINARY_DIR} --target install)
+  elseif(${package} STREQUAL CLI11)
+    set(${package}_INSTALL_DIR ${CMAKE_BINARY_DIR}/${bundle}_install)
+    file(MAKE_DIRECTORY ${${package}_INSTALL_DIR})
+    set(${package}_PREFIX ${${package}_INSTALL_DIR})
+
+    exec(${CMAKE_COMMAND} -S ${${package}_SOURCE_DIR} -B ${${package}_BINARY_DIR} -G ${CMAKE_GENERATOR}
+      -DCMAKE_INSTALL_PREFIX=${${package}_INSTALL_DIR}
+    )
+    exec(${CMAKE_COMMAND} --build ${${package}_BINARY_DIR})
+    exec(${CMAKE_COMMAND} --build ${${package}_BINARY_DIR} --target install)
   endif()
 
   set(${package}_ROOT ${${package}_PREFIX} CACHE PATH "Location of bundle package ${package}")

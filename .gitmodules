@@ -1,3 +1,6 @@
 [submodule "extern/FairCMakeModules"]
 	path = extern/FairCMakeModules
 	url = https://github.com/FairRootGroup/FairCMakeModules
+[submodule "extern/CLI11"]
+	path = extern/CLI11
+	url = https://github.com/CLIUtils/CLI11
