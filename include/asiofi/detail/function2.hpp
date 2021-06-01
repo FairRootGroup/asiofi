@@ -31,6 +31,8 @@
 #ifndef FU2_INCLUDED_FUNCTION2_HPP_
 #define FU2_INCLUDED_FUNCTION2_HPP_
 
+#pragma GCC diagnostic ignored "-Wshadow"
+
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
@@ -1812,5 +1814,7 @@ constexpr auto overload(T&&... callables) {
 #undef FU2_DETAIL_UNREACHABLE_INTRINSIC
 #undef FU2_DETAIL_TRAP
 #undef FU2_DETAIL_CXX14_CONSTEXPR
+
+#pragma GCC diagnostic pop
 
 #endif // FU2_INCLUDED_FUNCTION2_HPP_

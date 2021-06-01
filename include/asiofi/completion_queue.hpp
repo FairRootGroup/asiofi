@@ -202,7 +202,7 @@ namespace asiofi
         throw runtime_error("Failed opening ofi completion queue, reason: ",
                             fi_strerror(rc));
 
-      return {cq, [](fid_cq* cq) { fi_close(&cq->fid); }};
+      return {cq, [](fid_cq* _cq) { fi_close(&_cq->fid); }};
     }
   }; /* struct completion_queue */
 

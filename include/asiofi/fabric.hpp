@@ -1,5 +1,5 @@
 /********************************************************************************
- *    Copyright (C) 2018 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    *
+ * Copyright (C) 2018-2021 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
  *                                                                              *
  *              This software is distributed under the terms of the             *
  *              GNU Lesser General Public Licence (LGPL) version 3,             *
@@ -47,9 +47,9 @@ namespace asiofi
 
     /// move ctor
     explicit fabric(fabric&& rhs)
-    : m_info(std::move(rhs.m_info))
-    , m_context(std::move(rhs.m_context))
-    , m_fabric(std::move(rhs.m_fabric))
+      : m_context(std::move(rhs.m_context))
+      , m_info(std::move(rhs.m_info))
+      , m_fabric(std::move(rhs.m_fabric))
     {
       rhs.m_fabric = nullptr;
     }
@@ -61,8 +61,8 @@ namespace asiofi
     auto get_info() const -> const info& { return m_info; }
 
     private:
-    const info& m_info;
     fi_context m_context;
+    const info& m_info;
     fid_fabric* m_fabric; // TODO use smart pointer
   }; /* struct fabric */
 } /* namespace asiofi */

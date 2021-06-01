@@ -1,5 +1,5 @@
 /********************************************************************************
- *    Copyright (C) 2018 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    *
+ * Copyright (C) 2018-2021 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
  *                                                                              *
  *              This software is distributed under the terms of the             *
  *              GNU Lesser General Public Licence (LGPL) version 3,             *
@@ -65,9 +65,9 @@ namespace asiofi {
 
     connected_endpoint(connected_endpoint&& rhs) = default;
 
-    auto bind(const event_queue& eq) -> void
+    auto bind(const event_queue& _eq) -> void
     {
-      auto rc = fi_ep_bind(m_connected_endpoint.get(), &get_wrapped_obj(eq)->fid, 0);
+      auto rc = fi_ep_bind(m_connected_endpoint.get(), &get_wrapped_obj(_eq)->fid, 0);
       if (rc != FI_SUCCESS)
         throw runtime_error(rc,
                             "Failed binding ofi event queue to ofi connected_endpoint");
@@ -80,10 +80,10 @@ namespace asiofi {
       selective_completion = FI_SELECTIVE_COMPLETION
     };
 
-    auto bind(const completion_queue& cq, connected_endpoint::cq_flag flag) -> void
+    auto bind(const completion_queue& _cq, connected_endpoint::cq_flag flag) -> void
     {
       auto rc = fi_ep_bind(m_connected_endpoint.get(),
-                           &get_wrapped_obj(cq)->fid,
+                           &get_wrapped_obj(_cq)->fid,
                            static_cast<uint64_t>(flag));
       if (rc != FI_SUCCESS)
         throw runtime_error(
@@ -112,7 +112,7 @@ namespace asiofi {
                             "",   // TODO print addr
                             " on ofi connected_endpoint");
 
-      m_eq.async_read([&, _handler = std::move(handler)](eq::event event, info&& info) {
+      m_eq.async_read([&, _handler = std::move(handler)](eq::event event, info&&) {
         switch (event) {
           case eq::event::connected:
           case eq::event::connrefused:
@@ -142,7 +142,7 @@ namespace asiofi {
         throw runtime_error("Failed accepting connection, reason: ", fi_strerror(rc));
 
       m_eq.async_read(
-        [&, _handler = std::move(handler)](eq::event event, info&& info) {
+        [&, _handler = std::move(handler)](eq::event event, info&&) {
           if (event == eq::event::connected) {
             _handler();
           } else {
@@ -280,7 +280,7 @@ namespace asiofi {
                             fi_strerror(rc));
       }
 
-      return {ep, [](fid_ep* ep) { fi_close(&ep->fid); }};
+      return {ep, [](fid_ep* _ep) { fi_close(&_ep->fid); }};
     }
   }; /* struct connected_endpoint */
 

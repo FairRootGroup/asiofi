@@ -1,5 +1,5 @@
 /********************************************************************************
- *    Copyright (C) 2018 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    *
+ * Copyright (C) 2018-2021 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
  *                                                                              *
  *              This software is distributed under the terms of the             *
  *              GNU Lesser General Public Licence (LGPL) version 3,             *
@@ -123,11 +123,13 @@ namespace asiofi
   struct info : hints
   {
     /// query ctor
-    explicit info(const char* node, const char* service,
-      uint64_t flags, const hints& hints)
+    explicit info(const char* node,
+                  const char* service,
+                  uint64_t flags,
+                  const hints& _hints)
     {
-      auto rc = fi_getinfo(FI_VERSION(1, 5), node, service, flags,
-                           get_wrapped_obj(hints), &m_info);
+      auto rc = fi_getinfo(
+        FI_VERSION(1, 5), node, service, flags, get_wrapped_obj(_hints), &m_info);
       if (rc == -61) {
         throw runtime_error("Failed querying fi_getinfo, reason: ",
           "No supported fabric/domain found (", rc, ")");
@@ -137,13 +139,15 @@ namespace asiofi
     }
 
     /// query ctor #2
-    explicit info(uint64_t flags, const hints& hints)
-    : info(nullptr, nullptr, flags, hints)
+    explicit info(uint64_t flags, const hints& _hints)
+      : info(nullptr, nullptr, flags, _hints)
     {
     }
 
     /// query ctor #3
-    explicit info(const hints& hints) : info(0, hints) { }
+    explicit info(const hints& _hints)
+      : info(0, _hints)
+    {}
 
     /// (default) query ctor #4
     info() : info(hints()) { }

@@ -169,7 +169,7 @@ namespace asiofi
       if (rc != FI_SUCCESS)
         throw runtime_error("Failed opening ofi event queue, reason: ", fi_strerror(rc));
 
-      return {eq, [](fid_eq* eq){ fi_close(&eq->fid); }};
+      return {eq, [](fid_eq* _eq) { fi_close(&_eq->fid); }};
     }
   }; /* struct event_queue */
 

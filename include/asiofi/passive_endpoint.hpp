@@ -65,9 +65,10 @@ namespace asiofi
       connreq = FI_CONNREQ
     };
 
-    auto bind(const event_queue& eq, passive_endpoint::eq_flag flags) -> void
+    auto bind(const event_queue& _eq, passive_endpoint::eq_flag flags) -> void
     {
-      auto rc = fi_pep_bind(m_pep.get(), &get_wrapped_obj(eq)->fid, static_cast<uint64_t>(flags));
+      auto rc = fi_pep_bind(
+        m_pep.get(), &get_wrapped_obj(_eq)->fid, static_cast<uint64_t>(flags));
       if (rc != FI_SUCCESS)
         throw runtime_error("Failed binding ofi event queue to ofi passive connected_endpoint, reason: ", fi_strerror(rc));
     }
@@ -145,7 +146,7 @@ namespace asiofi
       if (rc != 0)
         throw runtime_error("Failed creating ofi passive connected_endpoint, reason: ", fi_strerror(rc));
 
-      return {pep, [](fid_pep* pep){ fi_close(&pep->fid); }};
+      return {pep, [](fid_pep* _pep) { fi_close(&_pep->fid); }};
     }
   }; /* struct passive_endpoint */
 

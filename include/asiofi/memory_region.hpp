@@ -1,5 +1,5 @@
 /********************************************************************************
- *    Copyright (C) 2019 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH    *
+ * Copyright (C) 2019-2021 GSI Helmholtzzentrum fuer Schwerionenforschung GmbH  *
  *                                                                              *
  *              This software is distributed under the terms of the             *
  *              GNU Lesser General Public Licence (LGPL) version 3,             *
@@ -43,9 +43,9 @@ namespace asiofi {
 
     explicit memory_region(const domain& domain,
                            asio::mutable_buffer buffer,
-                           access access)
+                           access _access)
       : m_memory_region(
-          std::move(create_memory_region(domain, buffer, access, m_context.get())))
+        std::move(create_memory_region(domain, buffer, _access, m_context.get())))
     {
       // std::cout << "registered memory region: local_desc=" << desc() << " buf=" <<
       // buffer.data() << " size=" << buffer.size() << " access=0x" << std::hex <<
@@ -95,8 +95,8 @@ namespace asiofi {
                             "), reason: ",
                             fi_strerror(rc));
 
-      return {mr, [](fid_mr* mr) {
-                fi_close(&mr->fid);
+      return {mr, [](fid_mr* _mr) {
+                fi_close(&_mr->fid);
                 // std::cout << "fi_close: fid_mr*=" << mr << std::endl;
               }};
     }

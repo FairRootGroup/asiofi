@@ -6,7 +6,6 @@
  *                  copied verbatim in the file "LICENSE"                       *
  ********************************************************************************/
 
-// #define BOOST_ASIO_ENABLE_HANDLER_TRACKING
 #include <CLI/App.hpp>
 #include <CLI/Config.hpp>
 #include <CLI/Formatter.hpp>
@@ -38,7 +37,6 @@ std::unique_ptr<T> make_unique(Args&&... args)
 auto handle_cli(int argc, char** argv, CLI::App& app) -> void
 {
   app.add_option("host", "Host to bind on / connect to");
-  // app.add_option("-h,--help", "Help screen");
   app.add_flag  ("-v,--version", "Print version");
   app.add_option("-p,--port", "Server port")
                ->default_val(5000)
@@ -107,8 +105,7 @@ auto msg_bw(const bool is_server,
 {
   asio::io_context io_context;
   asio::signal_set signals(io_context, SIGINT, SIGTERM);
-  signals.async_wait(
-    [&](const std::error_code& error, int signal_number) { io_context.stop(); });
+  signals.async_wait([&](const std::error_code&, int) { io_context.stop(); });
 
   asiofi::hints hints;
   hints.set_provider(provider);
@@ -168,7 +165,7 @@ auto msg_bw(const bool is_server,
             ctrl_endpoint->send(ctrl_buffer, desc, [](asio::mutable_buffer) {});
           }
 
-          endpoint->send(buffer2, desc, [&](asio::mutable_buffer buffer3) {
+          endpoint->send(buffer2, desc, [&](asio::mutable_buffer) {
             if (completed == 0) {
               start = std::chrono::steady_clock::now();
             }
@@ -210,7 +207,7 @@ auto msg_bw(const bool is_server,
             ctrl_endpoint->send(ctrl_buffer, desc, [](asio::mutable_buffer) {});
           }
 
-          endpoint->send(buffer, desc, [&](asio::mutable_buffer buffer) {
+          endpoint->send(buffer, desc, [&](asio::mutable_buffer) {
             if (completed == 0) {
               start = std::chrono::steady_clock::now();
             }
@@ -237,16 +234,16 @@ auto msg_bw(const bool is_server,
 
     // server listen logic
     pep = make_unique<asiofi::passive_endpoint>(io_context, fabric);
-    pep->listen([&](asiofi::info&& info) {
+    pep->listen([&](asiofi::info&& info2) {
       std::cout << "listen1" << std::endl;
-      endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain, info);
+      endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain, info2);
       endpoint->enable();
       endpoint->accept([&] {
         if (emulate_control_band) {
-          pep->listen([&](asiofi::info&& info2) {
+          pep->listen([&](asiofi::info&& info3) {
             std::cout << "listen2" << std::endl;
             ctrl_endpoint =
-              make_unique<asiofi::connected_endpoint>(io_context, domain, info2);
+              make_unique<asiofi::connected_endpoint>(io_context, domain, info3);
             ctrl_endpoint->enable();
             ctrl_endpoint->accept([&] {
               std::cout << "accept2" << std::endl;
@@ -281,7 +278,7 @@ auto msg_bw(const bool is_server,
             ctrl_endpoint->recv(ctrl_buffer, desc, [&](asio::mutable_buffer) {
               sem.signal();
               sem2.async_wait([&]() {
-                endpoint->recv(buffer, desc, [&](asio::mutable_buffer buffer) {
+                endpoint->recv(buffer, desc, [&](asio::mutable_buffer) {
                   ++completed;
                   sem2.signal();
 
@@ -299,7 +296,7 @@ auto msg_bw(const bool is_server,
               });
             });
           } else {
-            endpoint->recv(buffer, desc, [&](asio::mutable_buffer buffer) {
+            endpoint->recv(buffer, desc, [&](asio::mutable_buffer) {
               ++completed;
               sem.signal();
 
@@ -330,9 +327,9 @@ auto msg_bw(const bool is_server,
         if (emulate_control_band) {
           ctrl_endpoint = make_unique<asiofi::connected_endpoint>(io_context, domain);
           ctrl_endpoint->enable();
-          ctrl_endpoint->connect([&](asiofi::eq::event e) {
+          ctrl_endpoint->connect([&](asiofi::eq::event e2) {
             std::cout << "connect2" << std::endl;
-            if (e == asiofi::eq::event::connected) {
+            if (e2 == asiofi::eq::event::connected) {
               post_buffers();
             } else {
               throw std::runtime_error("Connection refused");
