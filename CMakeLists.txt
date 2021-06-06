@@ -44,7 +44,7 @@ if(BUILD_CORE)
 endif()
 
 if(BUILD_TESTING)
-  find_package2(BUNDLED CLI11 VERSION 1.9)
+  find_package2(PRIVATE CLI11 VERSION 1.9)
   if(NOT CLI11_FOUND AND NOT CLI11_BUNDLED)
     build_bundled(CLI11 extern/CLI11)
     find_package2(PRIVATE CLI11 REQUIRED)
