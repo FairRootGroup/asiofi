@@ -58,7 +58,7 @@ function(build_bundled package bundle)
   file(REMOVE ${${package}_BUILD_LOGFILE})
 
   if(GIT_EXECUTABLE)
-    exec_source(${GIT_EXECUTABLE} submodule update --init -- ${${package}_SOURCE_DIR})
+    exec_source(${GIT_EXECUTABLE} submodule update --init --recursive -- ${${package}_SOURCE_DIR})
   endif()
 
   if(${package} STREQUAL GTest)
@@ -87,7 +87,8 @@ function(build_bundled package bundle)
     set(${package}_PREFIX ${${package}_INSTALL_DIR})
 
     exec(${CMAKE_COMMAND} -S ${${package}_SOURCE_DIR} -B ${${package}_BINARY_DIR} -G ${CMAKE_GENERATOR}
-      -DCMAKE_INSTALL_PREFIX=${${package}_INSTALL_DIR}
+      -DCMAKE_INSTALL_PREFIX=${${package}_INSTALL_DIR} -DCLI11_WARNINGS_AS_ERRORS=OFF
+      -DCLI11_BUILD_DOCS=OFF -DCLI11_BUILD_TESTS=OFF
     )
     exec(${CMAKE_COMMAND} --build ${${package}_BINARY_DIR})
     exec(${CMAKE_COMMAND} --build ${${package}_BINARY_DIR} --target install)
