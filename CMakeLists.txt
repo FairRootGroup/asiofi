@@ -17,7 +17,6 @@ get_git_version()
 
 project(asiofi VERSION ${PROJECT_VERSION} LANGUAGES CXX)
 
-include(CTest)
 include(${PROJECT_NAME}ProjectSettings)
 ################################################################################
 
@@ -26,6 +25,7 @@ include(${PROJECT_NAME}ProjectSettings)
 include(${PROJECT_NAME}BuildOption)
 build_option(BUILD_CORE "Build asiofi library." DEFAULT ON)
 build_option(BUILD_TESTING "Build tests." DEFAULT OFF REQUIRES "BUILD_CORE")
+include(CTest)
 ################################################################################
 
 
